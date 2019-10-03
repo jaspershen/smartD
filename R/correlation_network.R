@@ -72,8 +72,6 @@ smartd_rplc_batch1 <-
   ungroup()
 
 
-
-
 ################cross-sectional correlation network
 cross_temp <- 
   smartd_rplc_batch1 %>% 
@@ -111,11 +109,11 @@ patient_info <-
 
 match(colnames(cross_temp), sfu1_148$sample_id)
 
+####log 10 and scale
 cross_temp <- 
   log(cross_temp, 10) %>% 
   as.data.frame(cross_temp)
 
-####log 10 and scale
 cross_temp <-
   apply(cross_temp, 1, function(x){
     (x - mean(x))/sd(x)
