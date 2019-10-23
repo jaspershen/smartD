@@ -1,22 +1,27 @@
 library(tidyverse)
 library(plyr)
 library(igraph)
-
+library(dplyr)
 setwd("data_analysis20190828/prediction/identification_table/")
+
+###This is batch data set
 smartd_rplc_batch1 <- 
   readr::read_csv("smartd_rplc_batch1.csv")
 
+##remove the tags of metabolites
 sample_data <- 
   smartd_rplc_batch1 %>% 
-  select(., -(name:Database))
+  dplyr::select(., -(name:Database))
 
+###metabolite tags
 metabolite_tags <- 
   smartd_rplc_batch1 %>% 
-  select(., name:Database)
+  dplyr::select(., name:Database)
 
-
+##if there are NAs or not
 sum(is.na(sample_data))
 
+##what samples have NAs
 which(is.na(sample_data), arr.ind = TRUE)[,2] %>% 
   unique()
 
@@ -25,26 +30,11 @@ colnames(sample_data)[c(146, 147, 148)]
 ###"SFU65" "SFU74" "SFU91" may have no positive data, so remove them from the dataset
 sample_data <- 
   sample_data %>% 
-  select(., -c(SFU65, SFU74, SFU91))
+  dplyr::select(., -c(SFU65, SFU74, SFU91))
 
 ###patient and sampel information
-sfu1_148 <- 
-  readr::read_csv("E:/project/smartD/patient information/SFU1-148_GA.csv")
-
-patient_info <- 
-  readr::read_csv("E:/project/smartD/data_analysis20190828/patient_info/patient_info.csv")
-
-sfu1_148 <- 
-  sfu1_148 %>% 
-  mutate(subject_id = as.character(subject_id), visit = as.character(visit)) %>% 
-  arrange(subject_id)
-
-patient_info <- 
-  patient_info %>% 
-  mutate(Patient_ID = as.character(Patient_ID), Visit = as.character(Visit)) %>% 
-  arrange(Patient_ID)
-
-match(colnames(sample_data), sfu1_148$sample_id)
+sample_info_191021 <- 
+  readr::read_csv("E:/project/smartD/patient information/sample_info_191021.csv")
 
 ####log 10 and scale
 sample_data <- 
@@ -64,69 +54,72 @@ sample_data <-
 colnames(sample_data)[-1] <- 
   smartd_rplc_batch1$name
 
+###add the patient information to the sample_data
 sample_data <- 
-  inner_join(x = sfu1_148[,-1], sample_data, 
-             by = c("sample_id" = "Sample_ID"))
+  right_join(x = sample_info_191021[,c(1:5)], sample_data, 
+             by = "Sample_ID")
 
+##remove GA is NA
+sample_data <- 
+  sample_data %>% 
+  filter(!is.na(GA))
 
 ####cluster
-library(pheatmap)
-sample_data %>% 
-  select(., -(subject_id:GA_week)) %>% 
-  pheatmap(., show_rownames = FALSE, 
-           show_colnames = FALSE)
-  
+# library(pheatmap)
+# sample_data %>% 
+#   dplyr::select(., -(subject_id:GA_week)) %>% 
+#   pheatmap(., show_rownames = FALSE, 
+#            show_colnames = FALSE)
+#   
 ####FCM cluster
 library(e1071)
 
 ####biomarker discovery and prediction
-sample_data$subject_id %>% 
+sample_data$Patient_ID %>% 
   unique() %>% 
   length()
 
 ##16 subjects in total
+###################################LASSO regression
 ##using lasso regressio to select variables
 library(glmnet)
+
+
 ###construct dataset for lasso regression
 sample_data_x <- 
-sample_data %>% 
-  select(-(subject_id:GA_week)) %>% 
+  sample_data %>% 
+  dplyr::select(-(Patient_ID:GA)) %>% 
   as.matrix()
 
 
 sample_data_y <- 
   sample_data %>% 
-  select(GA_week) %>% 
+  dplyr::select(GA) %>% 
   as.matrix()
 
+###use all the samples to do lasso regression
 lasso_regression <-  
-  glmnet(x = sample_data_x, y = sample_data_y, 
+  glmnet(x = sample_data_x,
+         y = sample_data_y, 
          family = "gaussian", 
-         nlambda = 50, alpha = 1)
+         nlambda = 100,
+         alpha = 1,
+         standardize = FALSE)
 
+##each row is a model, df is the variable number in this model and %Dev is R2 and lambda is the 
+## penality for the model, bigger lambda, less variables in this model
 print(lasso_regression)
-
 
 coef(lasso_regression, 
      s = c(lasso_regression$lambda[40],0.1)) %>% 
   head()
 
-
-
+###the coefficients of each variable change under different lambda
 plot(lasso_regression, xvar = "lambda", label = TRUE)
-
-
-lasso_regression <-
-  glmnet(
-    x = sample_data_x,
-    y = sample_data_y,
-    family = "gaussian",
-    nlambda = 50,
-    alpha = 1
-  )
 
 lasso_regression$a0
 
+###the coefficients of each variable change under different lambda
 beta <- 
   lasso_regression$beta
 
@@ -134,57 +127,26 @@ lasso_regression$df
 lasso_regression$lambda
 lasso_regression$dev.ratio
 
-data.frame(lambda = lasso_regression$lambda,
-           dev.ratio = lasso_regression$dev.ratio,
-           stringsAsFactors = FALSE) %>% 
-  ggplot(aes(log(lambda), dev.ratio)) +
-  labs(x = "log(lambda)", y = "Deviation ratio (%)") +
-  geom_point(size = 2) +
-  geom_line() +
-  theme_bw() +
-  theme(axis.title = element_text(size = 15),
-        axis.text = element_text(size = 13))
+plotLambdaVSdeviation(lasso_regression)
 
-beta <-
-  lasso_regression$beta %>%
-  as.matrix() %>%
-  t() %>%
-  as_tibble() %>%
-  mutate(lambda = lasso_regression$lambda) %>%
-  gather(., key = "feature", value = "coef", -lambda)
+plotLambdaVScoefficients(object = lasso_regression)
 
-
-beta %>% 
-  ggplot(., aes(log(lambda), coef)) +
-  geom_line(aes(colour = feature), show.legend = FALSE) +
-  scale_x_continuous(position = "bottom",
-                     sec.axis = sec_axis(~./10, name = "", 
-                                         labels = c(114, 90, 56, 17, 5, 0))) +
-  scale_colour_manual(values = colorRampPalette(pal_uchicago()(5))(600)) +
-  labs(x = "Log lambda", y = "Coefficients") +
-  theme_bw() +
-  theme(
-    axis.title = element_text(size = 15),
-    axis.text = element_text(size = 13)
-    # plot.margin = margin(5.5, 5.5, 5.5, 5.5, "pt")
-  ) 
-  
 grid::convertUnit(unit(13, "pt"), "mm", valueOnly=TRUE)
 
 # plot(lasso_regression, xvar = "lambda", label = TRUE)
 # plot(rev(pull(beta, colnames(beta)[484])), type = "l")
+###we should use cross validation to get the best model and get the markers
 
-lasso_regression
-# plot(lasso_regression, xvar = "lambda", label = TRUE)
 lasso_regression2 <-
   cv.glmnet(
     x = sample_data_x,
     y = sample_data_y,
     family = "gaussian",
-    type.measure = "mse",
+    type.measure = "mae",
     nfolds = 7,
-    nlambda = 50,
-    alpha = 1
+    nlambda = 100,
+    alpha = 1,
+    standardize = FALSE
   )
         
 lasso_regression2$lambda
@@ -199,61 +161,9 @@ lasso_regression2$glmnet.fit
 lasso_regression2$lambda.min
 lasso_regression2$lambda.1se
 
-beta <-
-  lasso_regression2$glmnet.fit$beta %>% 
-  as.matrix() %>% 
-  t() %>% 
-  as_tibble() %>% 
-  mutate(lambda = lasso_regression2$lambda) %>% 
-  gather(., key = "feature", value = "coef", -lambda)
+plotLambdaVScoefficients(object = lasso_regression2$glmnet.fit)
 
-
-beta %>% 
-  ggplot(., aes(log(lambda), coef)) +
-  geom_line(aes(colour = feature), show.legend = FALSE) +
-  scale_x_continuous(position = "bottom",
-                     sec.axis = sec_axis(~./10, name = "", 
-                                         labels = c(114, 90, 56, 17, 5, 0))) +
-  scale_colour_manual(values = colorRampPalette(pal_uchicago()(5))(600)) +
-  labs(x = "Log lambda", y = "Coefficients") +
-  theme_bw() +
-  theme(
-    axis.title = element_text(size = 15),
-    axis.text = element_text(size = 13)
-    # plot.margin = margin(5.5, 5.5, 5.5, 5.5, "pt")
-  ) 
-
-
-cvm <-
-  data.frame(
-    lambda = lasso_regression2$lambda,
-    df = lasso_regression2$glmnet.fit$df,
-    cvm = lasso_regression2$cvm,
-    cvup = lasso_regression2$cvup,
-    cvlo = lasso_regression2$cvlo,
-    stringsAsFactors = FALSE
-  )
-
-cvm %>% 
-  ggplot(., aes(log(lambda), cvm)) +
-  geom_vline(xintercept = log(c(lasso_regression2$lambda.min,
-                                lasso_regression2$lambda.1se)),
-             linetype = 2) +
-  geom_errorbar(aes(ymin = cvlo, ymax = cvup), colour = "#155F83FF") +
-  geom_point(size = 2, colour = "#FFA319FF") +
-  scale_x_continuous(position = "bottom",
-                     sec.axis = sec_axis(trans = ~.,
-                                         breaks = log(cvm$lambda)[seq(1, 50, by = 7)],
-                                         labels = cvm$df[seq(1, 50, by = 7)],
-                                         name = "")
-                     ) +
-  labs(x = "Log lambda", y = "Coefficients") +
-  theme_bw() +
-  theme(
-    axis.title = element_text(size = 15),
-    axis.text = element_text(size = 13)
-    # plot.margin = margin(5.5, 5.5, 5.5, 5.5, "pt")
-  )
+plotLambdaVSerror(object = lasso_regression2)
 
 # plot(lasso_regression2)
 
@@ -262,15 +172,18 @@ cvm %>%
 
 ##construct the best model
 best_lasso <-
-  glmnet(sample_data_x, sample_data_y,
+  glmnet(sample_data_x, 
+         sample_data_y,
          family = "gaussian", 
          alpha = 1, 
-         lambda = lasso_regression2$lambda.1se)
-
+         lambda = lasso_regression2$lambda.1se, 
+         standardize = FALSE)
 
 ##markers
 which(lasso_regression2$lambda == lasso_regression2$lambda.1se)
-lasso_regression2$glmnet.fit$beta[,21] %>% 
+
+marker_lasso <- 
+  lasso_regression2$glmnet.fit$beta[,48] %>% 
   tibble(name = rownames(lasso_regression2$glmnet.fit$beta),
             coef = .) %>% 
   filter(coef != 0) 
@@ -283,7 +196,6 @@ predicted_y <-
     # type = "response"
   )
 
-
 plot(
 sample_data_y[,1],
 predicted_y[,1]
@@ -291,48 +203,289 @@ predicted_y[,1]
 
 abline(0, 1)
 
+##markers
+marker_lasso %>% 
+  left_join(., metabolite_tags, by = c("name")) %>% 
+  arrange(coef) %>%
+  # arrange(., desc(coef)) %>% 
+  ggplot(aes(x = factor(Compound.name, Compound.name), y = coef)) +
+  labs(x = "", y = "Coefficents") +
+  geom_segment(aes(x = factor(Compound.name, Compound.name), 
+                   xend = factor(Compound.name, Compound.name),
+                   y = 0, yend = coef), 
+               colour = "#155F83FF") +
+  geom_point(size = 2, colour = "#FFA319FF") +
+  coord_flip() +
+  theme_bw() +
+  theme(axis.title = element_text(size = 15),
+        axis.text.x = element_text(size = 13),
+        axis.text.y = element_text(size = 10))
+
+
+####
+##validate in batch 2 dataset
+smartd_rplc_batch2 <- 
+  readr::read_csv("E:/project/smartD/smartD_batch1_2/RPLC/POS_NEG/ms1_data_rplc_batch2.csv")
+
+##remove QC and blank form batch 2 dataset
+smartd_rplc_batch2 <-
+  smartd_rplc_batch2 %>% 
+  select(-contains("blk")) %>% 
+  select(-contains("QC"))
+
+
+sample_removed <-
+  which(is.na(smartd_rplc_batch2), arr.ind = TRUE)[,2] %>% 
+  unique() %>% 
+  `[`(colnames(smartd_rplc_batch2), .)
+
+##These samples may have positive or negative samples but don't have, so we should remove them
+smartd_rplc_batch2 <- 
+  smartd_rplc_batch2 %>% 
+  dplyr::select(-sample_removed)
+
+##remove the tags of metabolites
+sample_data2 <- 
+  smartd_rplc_batch2 %>% 
+  dplyr::select(-(name:rt))
+
+###metabolite tags
+metabolite_tags2 <- 
+  smartd_rplc_batch2 %>% 
+  dplyr::select(., name:rt)
+
+####log 10 and scale
+sample_data2 <- 
+  log(sample_data2, 10) %>% 
+  as.data.frame()
+
+sample_data2 <-
+  apply(sample_data2, 1, function(x){
+    (x - mean(x))/sd(x)
+  })
+
+sample_data2 <- 
+  sample_data2 %>% 
+  as.data.frame() %>% 
+  rownames_to_column(., var = "Sample_ID")
+
+colnames(sample_data2)[-1] <- 
+  smartd_rplc_batch2$name
+
+####add GA information
+sample_data2 <- 
+  right_join(x = sample_info_191021[,c(1:5)], sample_data2, 
+             by = "Sample_ID")
+
+###remove GA is 0 and modify the GA
+sample_data2 <- 
+  sample_data2 %>% 
+  filter(!is.na(GA))
+
+###construct dataset for lasso regression
+sample_data2_x <- 
+  sample_data2 %>% 
+  dplyr::select(-c(Patient_ID, GA)) %>% 
+  as.matrix()
+
+sample_data2_y <- 
+  sample_data2 %>% 
+  dplyr::select(GA) %>% 
+  as.matrix()
+
+##read the batch 1 and batch 2 match information
+rplc_pos_batch1_batch2_matched_info <- 
+  readr::read_csv("E:/project/smartD/smartD_batch1_2/RPLC/POS/rplc_pos_batch1_batch2_matched_info.csv")
+
+rplc_pos_batch1_batch2_matched_info <- 
+  readr::read_csv("E:/project/smartD/smartD_batch1_2/RPLC/POS/rplc_pos_batch1_batch2_matched_info.csv")
+
+rplc_matched_info <- rbind(rplc_pos_batch1_batch2_matched_info[,-1],
+                           rplc_neg_batch1_batch2_matched_info)
+
+rplc_matched_info %>% 
+  filter(batch1 %in% marker_lasso$name) %>% 
+  pull(batch2)
+
+marker_lasso <- 
+  marker_lasso %>% 
+  dplyr::rename("name1" = name) %>% 
+  mutate(., name2 = 
+           match(name1, rplc_matched_info$batch1) %>% 
+           `[`(rplc_matched_info$batch2, .)
+  )
+
+
+marker_lasso <- 
+  marker_lasso %>% 
+  filter(!is.na(name2))
+
 ####we should use the bootstrap method to validate our result
 dim(sample_data_x)
 
-predict_y <- vector(mode = "list", length = 1000)
-y <- vector(mode = "list", length = 1000)
-for(i in 1:1000){
+sample_data_x_lasso <- 
+  sample_data_x %>% 
+  as_tibble() %>% 
+  dplyr::select(one_of(marker_lasso$name1))
+
+
+# sample_data_x_lasso <- 
+#   apply(sample_data_x_lasso, 2, as.numeric)
+
+###use validation dataset (batch 2) for validation
+sample_data2_x_lasso <- 
+  sample_data2_x %>% 
+  as_tibble() %>% 
+  dplyr::select(one_of(marker_lasso$name2))
+
+colnames(sample_data2_x_lasso) <-
+  marker_lasso$name1
+
+sample_data2_x_lasso <- 
+  apply(sample_data2_x_lasso, 2, as.numeric)
+
+best_lasso2 <-
+  glmnet(as.matrix(sample_data_x_lasso), 
+         sample_data_y,
+         family = "gaussian", 
+         alpha = 1, 
+         lambda = lasso_regression2$lambda.1se, 
+         standardize = FALSE)
+
+predicted_y <-
+  predict(
+    object = best_lasso2,
+    newx = as.matrix(sample_data2_x_lasso),
+    s = lasso_regression2$lambda.1se
+    # type = "response"
+  )
+
+plot(
+  sample_data2_y[,1],
+  predicted_y[,1]
+)
+
+abline(0, 1)
+
+
+prediction_self <- 
+  predict(object = best_lasso2, 
+          newx = as.matrix(sample_data_x_lasso), 
+          s = lasso_regression2$lambda.1se)
+
+plot(prediction_self, sample_data_y[,1])
+abline(0, 1)
+
+linear_regression <- 
+  lm(formula = sample_data_y[,1] ~ prediction_self)
+
+predicted_y2 <- 
+  coef(linear_regression)[2] * predicted_y[,1] + coef(linear_regression)[1]
+
+
+abs(sample_data2_y[,1] - predicted_y2) %>% 
+  mean()
+
+summary(lm(formula = predicted_y2~sample_data2_y[,1]))
+
+
+
+plot(predicted_y[,1], sample_data2_y[,1])
+abline(0, 1)
+
+plot(predicted_y[,1], predicted_y2)
+abline(0, 1)
+
+predict_y <- vector(mode = "list", length = 100)
+y <- vector(mode = "list", length = 100)
+
+for(i in 1:100){
   cat(i, " ")
   dis_index <- 
-    sample(1:nrow(sample_data_x), size = nrow(sample_data_x), replace = TRUE) %>% 
+    sample(1:nrow(sample_data_x_lasso), 
+           size = nrow(sample_data_x_lasso), replace = TRUE) %>% 
     unique() %>% 
     sort()
   
   val_index <-
-    setdiff(1:nrow(sample_data_x), dis_index)
+    setdiff(1:nrow(sample_data_x_lasso), dis_index)
   
-  lasso_regression_temp <-
-    cv.glmnet(
-      x = sample_data_x[dis_index,],
-      y = sample_data_y[dis_index,],
-      family = "gaussian",
-      type.measure = "mse",
-      nfolds = 7,
-      nlambda = 50,
-      alpha = 1
-    )
-  
-  best_lambda <- lasso_regression_temp$lambda.1se
+  # lasso_regression_temp <-
+  #   cv.glmnet(
+  #     x = as.matrix(sample_data_x_lasso[dis_index,]),
+  #     y = sample_data_y[dis_index,],
+  #     family = "gaussian",
+  #     type.measure = "mse",
+  #     nfolds = 7,
+  #     nlambda = 50,
+  #     alpha = 1,
+  #     standardize = FALSE
+  #   )
+  # 
+  # best_lambda <- lasso_regression_temp$lambda.1se
   
   lasso_regression_best <- 
-    glmnet(sample_data_x[dis_index,], 
+    glmnet(as.matrix(sample_data_x_lasso[dis_index,]), 
            sample_data_y[dis_index,],
            family = "gaussian", 
            alpha = 1, 
-           lambda = best_lambda)
+           lambda = lasso_regression2$lambda.1se)
   
-  predict_y[[i]] <- 
+  
+  ##construct a new linear model to correct prediction and real value 
+  prediction_self <- 
     predict(
       object = lasso_regression_best,
-      newx = sample_data_x[val_index,],
+      newx = as.matrix(sample_data_x_lasso[dis_index,]),
       s = best_lambda
       # type = "response"
     )[,1]
+  
+  
+  # plot(prediction_self, sample_data_y[dis_index,1])
+  # abline(0, 1)
+  ###construct a new liner regression model to correct them
+  linear_regression <- 
+    lm(formula = sample_data_y[dis_index,1] ~ prediction_self)
+  
+  temp_predict_y <- 
+    predict(
+      object = lasso_regression_best,
+      newx = as.matrix(sample_data_x_lasso[val_index,]),
+      s = best_lambda
+      # type = "response"
+    )[,1]
+  
+  temp_predict_y2 <- 
+    coef(linear_regression)[2] * temp_predict_y + coef(linear_regression)[1]
+  
+  # plot(sample_data_y[val_index,1], temp_predict_y, xlim = c(10, 40), ylim = c(10,40))
+  # abline(0, 1)
+  # 
+  # plot(sample_data_y[val_index,1], temp_predict_y2, xlim = c(10, 40), ylim = c(10,40))
+  # abline(0, 1)
+  # 
+  # plot(temp_predict_y, temp_predict_y2, xlim = c(10, 40), ylim = c(10,40))
+  
+  # sum(abs(sample_data_y[val_index,1] - temp_predict_y))
+  # sum(abs(sample_data_y[val_index,1] - temp_predict_y2))
+  
+  # predict(
+  #   object = linear_regression, 
+  #   newx = temp_predict_y
+  #   # type = "response"
+  # )
+  
+  predict_y[[i]] <- 
+    temp_predict_y2
+  
+  # predict_y[[i]] <- 
+  #   predict(
+  #     object = lasso_regression_best,
+  #     newx = as.matrix(sample_data_x_lasso[val_index,]),
+  #     s = best_lambda
+  #     # type = "response"
+  #   )[,1]
     
   y[[i]] <- 
     sample_data_y[val_index,1]
@@ -343,6 +496,9 @@ plot(unlist(y), unlist(predict_y))
 abline(0,1)
 
 (unlist(y) - unlist(predict_y))^2 %>% 
+  mean()
+
+abs(unlist(y) - unlist(predict_y)) %>% 
   mean()
 
 summary(lm(formula = unlist(predict_y)~unlist(y)))
@@ -383,32 +539,13 @@ temp %>%
   theme(axis.title = element_text(size = 15),
         axis.text = element_text(size = 13))
 
-##markers
-##markers
-which(lasso_regression2$lambda == lasso_regression2$lambda.1se)
-marker_lasso <-
-lasso_regression2$glmnet.fit$beta[,21] %>% 
-  tibble(name = rownames(lasso_regression2$glmnet.fit$beta),
-         coef = .) %>%  
-  filter(coef != 0)
+
+###try marker in validation dataset (batch2)
 
 
-marker_lasso %>% 
-  left_join(., metabolite_tags, by = c("name")) %>% 
-  arrange(coef) %>%
-  # arrange(., desc(coef)) %>% 
-  ggplot(aes(x = factor(Compound.name, Compound.name), y = coef)) +
-  labs(x = "", y = "Coefficents") +
-  geom_segment(aes(x = factor(Compound.name, Compound.name), 
-                   xend = factor(Compound.name, Compound.name),
-                   y = 0, yend = coef), 
-               colour = "#155F83FF") +
-  geom_point(size = 2, colour = "#FFA319FF") +
-  coord_flip() +
-  theme_bw() +
-  theme(axis.title = element_text(size = 15),
-        axis.text.x = element_text(size = 13),
-        axis.text.y = element_text(size = 10))
+
+
+
 
 
 #####use other 

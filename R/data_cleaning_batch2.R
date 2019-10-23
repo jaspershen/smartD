@@ -46,7 +46,6 @@ patient_info <-
   select(-Sample_ID, GA = `Visit GA`)
  
 # patient_info <- patient_info[,c("Sample_ID", "Visit GA")]
-
 sample_info <-
   left_join(x = sample_info, y = patient_info, by = c("sample.name" = "Sample_ID2"))
 

@@ -3,17 +3,21 @@ library(tidyverse)
 library(ggplot2)
 
 ###samnple ID and urine ID
+##the first column is sample ID, and the second column is Urine ID. Urine is unique, one person one visit has one 
+##Urine sample
 sample_id_198_urine <- 
   readxl::read_xlsx(path = "198urine_SampleID_original IDs_RPLC.xlsx")
 
 head(sample_id_198_urine)
 
 ##urine ID and patient ID, one patient may have multiple urine samples
+##The first column (Urine ID) is urine ID, the second column (PTID) is patient ID.
 smartD_urine_info <- 
   readr::read_csv(file = "SmartD Urine IDs-part1-confirmed.csv")
 
 head(smartD_urine_info)
 
+####how many samples for each patient
 smartD_urine_info %>% 
   group_by(PTID) %>% 
   summarise(number = n()) %>% 
@@ -26,39 +30,54 @@ smartD_urine_info %>%
   coord_flip()
 
 
+###20 patients in total
+smartD_urine_info$PTID %>% unique %>% 
+  length()
+
+
 smartD_urine_info %>% 
   group_by(PTID) %>% 
-  summarise(n()) %>% 
-  dim()
+  summarise(n())
+
 
 ###patient ID and clinical information
+##The first column (participant_is) is the patient ID. The second column (redcap_event_name) is the Visit
 final_info <- 
   readr::read_csv(file = "FINALSMARTDiaphragm2_DATA_2019-07-01_1615.csv")
 
+###final_info has 51 samples
 final_info %>% 
   group_by(participant_id) %>% 
   summarise(n()) %>% 
   dim()
 
-
+####unify the name of different files
 colnames(sample_id_198_urine) <- c("Sample_ID", "Urine_ID")
 colnames(smartD_urine_info)[1:2] <- c("Urine_ID", "Patient_ID")
+###just make them all upper
 smartD_urine_info$Patient_ID <- stringr::str_to_upper(smartD_urine_info$Patient_ID)
-colnames(smartD_urine_info)[1:2] <- c("Urine_ID", "Patient_ID")
 colnames(final_info)[1] <- c("Patient_ID")
 final_info$Patient_ID <- stringr::str_to_upper(final_info$Patient_ID)
 
-
-anti_join(sample_id_198_urine, smartD_urine_info) %>% 
+anti_join(sample_id_198_urine, smartD_urine_info, by = "Urine_ID") %>% 
   pull("Sample_ID")
 
-# sample_ID: SFU_B1, SFU_B10
+# combine them according to Urine_ID
+sample_id_198_urine$Urine_ID
+smartD_urine_info$Urine_ID
+
+setdiff(sample_id_198_urine$Urine_ID, smartD_urine_info$Urine_ID)
+setdiff(smartD_urine_info$Urine_ID, sample_id_198_urine$Urine_ID)
+
+##use the full_join
 patient_info <- 
-  dplyr::full_join(sample_id_198_urine, smartD_urine_info)
+  dplyr::full_join(sample_id_198_urine, smartD_urine_info,
+                   by = "Urine_ID")
 
 patient_info <- 
   patient_info %>% 
-  select(Patient_ID, everything())
+  select(Patient_ID, everything()) %>% 
+  arrange(Patient_ID, Visit)
   
 ##remove undefied columns
 patient_info <-
@@ -67,7 +86,6 @@ patient_info <-
   arrange(Patient_ID, `Visit GA`) 
   
   
-
 patient_info %>% 
   group_by(Patient_ID) %>% 
   summarise(n()) %>% 
@@ -78,19 +96,24 @@ final_info %>%
   summarise(n()) %>% 
   dim()
 
-final_info <-
-final_info %>% 
-  arrange(Patient_ID) %>% 
-  group_by(Patient_ID) %>% 
-  filter( redcap_event_name== "study_visit_01_arm_1") %>% 
-  ungroup()
+# final_info <-
+# final_info %>% 
+#   arrange(Patient_ID) %>% 
+#   group_by(Patient_ID) %>% 
+#   filter(redcap_event_name == "study_visit_01_arm_1") %>% 
+#   ungroup()
   
+
+final_info$redcap_event_name <- 
+  final_info$redcap_event_name %>% 
+  stringr::str_replace_all("study_visit_|_arm_1", "") %>% 
+  as.numeric()
 
 
 # final_info <- 
 patient_info <-
 patient_info %>% 
-  full_join(final_info)
+  left_join(final_info, by = c("Patient_ID", "Visit" = "redcap_event_name"))
 
 
 patient_info1 <- 
@@ -207,7 +230,6 @@ patient_info %>%
 
 
 write.csv(patient_info, "patient_info.csv", row.names = FALSE)
-
 
 ###patient information of batch 1
 setwd("E:/project/smartD/patient information")

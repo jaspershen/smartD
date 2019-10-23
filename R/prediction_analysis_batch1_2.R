@@ -9,25 +9,24 @@ smartd_rplc <-
 
 sample_data <- 
   smartd_rplc %>% 
-  select(., -(name:Database))
+  dplyr::select(., -(name:Database))
 
 metabolite_tags <- 
   smartd_rplc %>% 
-  select(., name:Database)
-
+  dplyr::select(., name:Database)
 
 sum(is.na(sample_data))
 
 which(is.na(sample_data), arr.ind = TRUE)[,2] %>% 
   unique()
 
-colnames(sample_data)[c(3,4,5,338,339,340,341,342,343,344,345)]
+colnames(sample_data)[c(3, 4, 5, 338, 339, 340, 341, 342, 343, 344, 345)]
 
-###"X100"  "X101"  "X102"  "X114"  "X115"  "X151"  "X152"  "X159"  "X85"   "X92"   "SFU65" 
+###"X100", "X101", "X102", "X114", "X115", "X151", "X152", "X159", "X85", "X92", "SFU65" 
 ##may have no positive data, so remove them from the dataset
 sample_data <- 
   sample_data %>% 
-  select(., -c(X100, X101, X102, X114, X115, X151, X152, X159, X85, X92, SFU65))
+  dplyr::select(., -c(X100, X101, X102, X114, X115, X151, X152, X159, X85, X92, SFU65))
 
 ###patient and sampel information
 sfu1_148 <- 
@@ -36,7 +35,7 @@ sfu1_148 <-
 patient_info <- 
   readr::read_csv("E:/project/smartD/data_analysis20190828/patient_info/patient_info.csv")
 
-SmartD_all346urine <- 
+smartD_all346urine <- 
   readr::read_csv("E:/project/smartD/data_analysis20190828/patient_info/SmartD_all346urine.csv")
 
 sfu1_148 <- 
@@ -50,7 +49,6 @@ patient_info <-
   arrange(Patient_ID)
 
 match(colnames(sample_data), sfu1_148$sample_id)
-
 
 ####log 10 and scale
 sample_data <- 
@@ -70,38 +68,46 @@ sample_data <-
 colnames(sample_data)[-1] <- 
   smartd_rplc$name
 
-sample_data <- 
-  inner_join(x = sfu1_148[,-1], sample_data, 
-             by = c("sample_id" = "Sample_ID"))
-
+# sample_data <- 
+#   inner_join(x = sfu1_148[,-1],
+#              y = sample_data, 
+#              by = c("sample_id" = "Sample_ID"))
 
 ###sample_data contains batch 1 and batch 2 data, we should split them
 load("E:/project/smartD/smartD_batch1_2/RPLC_xcms/POS/data_cleaning/smartd_rplc_pos_5")
-sample_info <- smartd_rplc_neg_5@sample.info
+sample_info <- 
+  smartd_rplc_neg_5@sample.info
+
+sample_data2 <-
+  inner_join(x = sample_data,
+             y = sample_info[, c("sample.name", "GA")],
+             by = c("Sample_ID" = "sample.name"))
 
 sample_data2 <- 
   sample_info %>% 
   plyr::dlply(., .variables = .(batch)) %>% 
   lapply(function(x)x$sample.name) %>% 
-  lapply(function(x) sample_data[sample_data$sample_id %in% x ,])
+  lapply(function(x) sample_data2[sample_data2$Sample_ID %in% x ,])
 
-
-
+##
+sample_data_batch1 <- sample_data2[[1]]
+sample_data_batch2 <- sample_data2[[2]]
 
 ####cluster
-library(pheatmap)
-sample_data %>% 
-  select(., -(subject_id:GA_week)) %>% 
-  pheatmap(., show_rownames = FALSE, 
-           show_colnames = FALSE)
+# library(pheatmap)
+# sample_data %>% 
+#   select(., -(subject_id:GA_week)) %>% 
+#   pheatmap(., show_rownames = FALSE, 
+#            show_colnames = FALSE)
   
 ####FCM cluster
-library(e1071)
-
+# library(e1071)
 ####biomarker discovery and prediction
-sample_data$subject_id %>% 
-  unique() %>% 
-  length()
+##use batch 1 data as discovery data
+sample_data <- sample_data_batch1
+# sample_data$subject_id %>% 
+#   unique() %>% 
+#   length()
 
 ##16 subjects in total
 ##using lasso regressio to select variables
@@ -109,23 +115,25 @@ library(glmnet)
 ###construct dataset for lasso regression
 sample_data_x <- 
 sample_data %>% 
-  select(-(subject_id:GA_week)) %>% 
+  dplyr::select(-c(Sample_ID, GA)) %>% 
   as.matrix()
-
 
 sample_data_y <- 
   sample_data %>% 
-  select(GA_week) %>% 
+  dplyr::select(GA) %>% 
   as.matrix()
 
 lasso_regression <-  
   glmnet(x = sample_data_x, y = sample_data_y, 
          family = "gaussian", 
-         nlambda = 50, alpha = 1)
+         nlambda = 100, alpha = 1, 
+         standardize = FALSE)
 
+##each row is a model, DF is free degree, variable number is DF+1, and %Dev is R2. 
 print(lasso_regression)
 
 
+##get the coefficients of variables using one specific lambda value
 coef(lasso_regression, 
      s = c(lasso_regression$lambda[40],0.1)) %>% 
   head()
@@ -140,8 +148,9 @@ lasso_regression <-
     x = sample_data_x,
     y = sample_data_y,
     family = "gaussian",
-    nlambda = 50,
-    alpha = 1
+    nlambda = 100,
+    alpha = 1,
+    standardize = FALSE
   )
 
 lasso_regression$a0
@@ -150,9 +159,12 @@ beta <-
   lasso_regression$beta
 
 lasso_regression$df
+##lambdas for 100 models 
 lasso_regression$lambda
+##R2 for 100 models
 lasso_regression$dev.ratio
 
+###log lambda vs R2
 data.frame(lambda = lasso_regression$lambda,
            dev.ratio = lasso_regression$dev.ratio,
            stringsAsFactors = FALSE) %>% 
@@ -164,6 +176,7 @@ data.frame(lambda = lasso_regression$lambda,
   theme(axis.title = element_text(size = 15),
         axis.text = element_text(size = 13))
 
+###beta is the coefficients for ecah variable in different models
 beta <-
   lasso_regression$beta %>%
   as.matrix() %>%
@@ -173,14 +186,18 @@ beta <-
   gather(., key = "feature", value = "coef", -lambda)
 
 
+library(ggsci)
+
 beta %>% 
   ggplot(., aes(log(lambda), coef)) +
   geom_line(aes(colour = feature), show.legend = FALSE) +
   scale_x_continuous(position = "bottom",
-                     sec.axis = sec_axis(~./10, name = "", 
-                                         labels = c(114, 90, 56, 17, 5, 0))) +
+                     sec.axis = sec_axis(trans = ~.,
+                                         breaks = c(-3,-2,-1,0,1), 
+                                         name = "",
+                                         labels = c(128, 107, 64, 21, 1))) +
   scale_colour_manual(values = colorRampPalette(pal_uchicago()(5))(600)) +
-  labs(x = "Log lambda", y = "Coefficients") +
+  labs(x = "Log Lambda", y = "Coefficients") +
   theme_bw() +
   theme(
     axis.title = element_text(size = 15),
@@ -192,20 +209,25 @@ grid::convertUnit(unit(13, "pt"), "mm", valueOnly=TRUE)
 
 # plot(lasso_regression, xvar = "lambda", label = TRUE)
 # plot(rev(pull(beta, colnames(beta)[484])), type = "l")
-
 lasso_regression
 # plot(lasso_regression, xvar = "lambda", label = TRUE)
+
+##set alpha as 0, so there are 21 markers
 lasso_regression2 <-
   cv.glmnet(
     x = sample_data_x,
     y = sample_data_y,
     family = "gaussian",
-    type.measure = "mse",
+    type.measure = "mae",
     nfolds = 7,
-    nlambda = 50,
-    alpha = 1
+    nlambda = 100,
+    alpha = 1,
+    standardize = FALSE,
+    parallel = FALSE
   )
         
+print(lasso_regression2)
+
 lasso_regression2$lambda
 lasso_regression2$cvm
 lasso_regression2$cvsd
@@ -213,10 +235,12 @@ lasso_regression2$cvup
 lasso_regression2$cvlo
 lasso_regression2$nzero
 lasso_regression2$name
-lasso_regression2$name
 lasso_regression2$glmnet.fit
 lasso_regression2$lambda.min
 lasso_regression2$lambda.1se
+
+
+plot(lasso_regression2, xvar = "lambda", label = TRUE)
 
 beta <-
   lasso_regression2$glmnet.fit$beta %>% 
@@ -227,12 +251,16 @@ beta <-
   gather(., key = "feature", value = "coef", -lambda)
 
 
+plot(lasso_regression2$glmnet.fit, xvar = "lambda", label = TRUE)
+
 beta %>% 
   ggplot(., aes(log(lambda), coef)) +
   geom_line(aes(colour = feature), show.legend = FALSE) +
   scale_x_continuous(position = "bottom",
-                     sec.axis = sec_axis(~./10, name = "", 
-                                         labels = c(114, 90, 56, 17, 5, 0))) +
+                     sec.axis = sec_axis(trans = ~., 
+                                         name = "", 
+                                         breaks = c(-3, -2, -1, 0, 1),
+                                         labels = c(129, 113, 62, 19, 3))) +
   scale_colour_manual(values = colorRampPalette(pal_uchicago()(5))(600)) +
   labs(x = "Log lambda", y = "Coefficients") +
   theme_bw() +
@@ -262,11 +290,11 @@ cvm %>%
   geom_point(size = 2, colour = "#FFA319FF") +
   scale_x_continuous(position = "bottom",
                      sec.axis = sec_axis(trans = ~.,
-                                         breaks = log(cvm$lambda)[seq(1, 50, by = 7)],
-                                         labels = cvm$df[seq(1, 50, by = 7)],
+                                         breaks = log(cvm$lambda)[seq(1, 100, by = 7)],
+                                         labels = cvm$df[seq(1, 100, by = 7)],
                                          name = "")
                      ) +
-  labs(x = "Log lambda", y = "Coefficients") +
+  labs(x = "Log lambda", y = "Mean absolute error") +
   theme_bw() +
   theme(
     axis.title = element_text(size = 15),
@@ -274,22 +302,25 @@ cvm %>%
     # plot.margin = margin(5.5, 5.5, 5.5, 5.5, "pt")
   )
 
-# plot(lasso_regression2)
+plot(lasso_regression2)
 
 # c(lasso_regression2$lambda.min,
 #   lasso_regression2$lambda.1se)
 
 ##construct the best model
 best_lasso <-
-  glmnet(sample_data_x, sample_data_y,
+  glmnet(sample_data_x, 
+         sample_data_y,
          family = "gaussian", 
-         alpha = 1, 
+         alpha = 1,
+         standardize = FALSE,
          lambda = lasso_regression2$lambda.1se)
 
 
 ##markers
-which(lasso_regression2$lambda == lasso_regression2$lambda.1se)
-lasso_regression2$glmnet.fit$beta[,21] %>% 
+which(lasso_regression2$lambda == lasso_regression2$lambda.1se) 
+
+lasso_regression2$glmnet.fit$beta[,35] %>% 
   tibble(name = rownames(lasso_regression2$glmnet.fit$beta),
             coef = .) %>% 
   filter(coef != 0) 
@@ -312,13 +343,14 @@ abline(0, 1)
 
 ####we should use the bootstrap method to validate our result
 dim(sample_data_x)
-
-predict_y <- vector(mode = "list", length = 1000)
-y <- vector(mode = "list", length = 1000)
-for(i in 1:1000){
+predict_y <- vector(mode = "list", length = 100)
+y <- vector(mode = "list", length = 100)
+for(i in 1:100){
   cat(i, " ")
   dis_index <- 
-    sample(1:nrow(sample_data_x), size = nrow(sample_data_x), replace = TRUE) %>% 
+    sample(1:nrow(sample_data_x), 
+           size = nrow(sample_data_x), 
+           replace = TRUE) %>% 
     unique() %>% 
     sort()
   
@@ -332,8 +364,9 @@ for(i in 1:1000){
       family = "gaussian",
       type.measure = "mse",
       nfolds = 7,
-      nlambda = 50,
-      alpha = 1
+      nlambda = 100,
+      alpha = 1,
+      standardize = FALSE
     )
   
   best_lambda <- lasso_regression_temp$lambda.1se
@@ -345,13 +378,74 @@ for(i in 1:1000){
            alpha = 1, 
            lambda = best_lambda)
   
-  predict_y[[i]] <- 
+  ##construct a new linear model to correct prediction and real value 
+  prediction_self <- 
+    predict(
+      object = lasso_regression_best,
+      newx = sample_data_x[dis_index,],
+      s = best_lambda
+      # type = "response"
+    )[,1]
+    
+  
+  plot(prediction_self, sample_data_y[dis_index,1])
+  abline(0, 1)
+  ###construct a new liner regression model to correct them
+  linear_regression <- 
+    lm(formula = sample_data_y[dis_index,1] ~ prediction_self)
+  
+  temp_predict_y <- 
     predict(
       object = lasso_regression_best,
       newx = sample_data_x[val_index,],
       s = best_lambda
       # type = "response"
     )[,1]
+    
+  temp_predict_y2 <- 
+    coef(linear_regression)[2] * temp_predict_y + coef(linear_regression)[1]
+    
+  # plot(sample_data_y[val_index,1], temp_predict_y, xlim = c(10, 40), ylim = c(10,40))
+  # abline(0, 1)
+  # 
+  # plot(sample_data_y[val_index,1], temp_predict_y2, xlim = c(10, 40), ylim = c(10,40))
+  # abline(0, 1)
+  # 
+  # plot(temp_predict_y, temp_predict_y2, xlim = c(10, 40), ylim = c(10,40))
+  
+  # sum(abs(sample_data_y[val_index,1] - temp_predict_y))
+  # sum(abs(sample_data_y[val_index,1] - temp_predict_y2))
+  
+  # predict(
+    #   object = linear_regression, 
+    #   newx = temp_predict_y
+    #   # type = "response"
+    # )
+    
+  predict_y[[i]] <- 
+    temp_predict_y2
+  
+  # plot(sample_data_y[val_index,1],  predict_y[[i]])
+  # 
+  # plot(sample_data_y[val_index,1],  temp_predict_y)
+  # abline(0, 1)
+  
+  
+  # predict_y[[i]] <- 
+  #   predict(
+  #     object = liner_regression, 
+  #     newx = predict_y[[i]]
+  #     # type = "response"
+  #   )
+  
+  # predict_y[[i]] <- 
+  #   predict(
+  #     object = lasso_regression_best,
+  #     newx = sample_data_x[val_index,],
+  #     s = best_lambda
+  #     # type = "response"
+  #   )[,1]
+  
     
   y[[i]] <- 
     sample_data_y[val_index,1]
@@ -362,6 +456,9 @@ plot(unlist(y), unlist(predict_y))
 abline(0,1)
 
 (unlist(y) - unlist(predict_y))^2 %>% 
+  mean()
+
+abs(unlist(y) - unlist(predict_y)) %>% 
   mean()
 
 summary(lm(formula = unlist(predict_y)~unlist(y)))
@@ -501,12 +598,11 @@ fgl.res %>%
 
 rf_regression <-
   randomForest(x = sample_data_x_rf, 
-               y = sample_data_y[,1], 
+               y = sample_data_y[,1],
+               mtry = 7,
                replace = TRUE, 
                importance = TRUE,
                proximity = TRUE)
-
-
 
 
 predict_y <- vector(mode = "list", length = 1000)
@@ -609,7 +705,7 @@ plot(rf_regression)
 
 
 sample_data %>% 
-  select(., subject_id, GA_week, name = marker_rf[30]) %>% 
+  select(., Sample_ID, GA, name = marker_rf[30]) %>% 
   ggplot(., aes(GA_week, name, colour = subject_id)) +
   geom_point() +
   geom_line()
@@ -656,7 +752,7 @@ svm_test$optVariables
 sample_data_x_svm <- 
   sample_data_x %>% 
   as.data.frame() %>% 
-  select(., one_of(marker_svm)) %>% 
+  dplyr::select(., one_of(marker_svm)) %>% 
   as.matrix()
 
 
@@ -829,7 +925,7 @@ marker_nnet <-
 sample_data_x_nnet <- 
   sample_data_x %>% 
   as.data.frame() %>% 
-  select(., one_of(marker_nnet)) %>% 
+  dplyr::select(., one_of(marker_nnet)) %>% 
   as.matrix()
 
 sample_data_x_y_nnet <- 
@@ -838,14 +934,14 @@ sample_data_x_y_nnet <-
 
 
 nnet_regression <- 
-  neuralnet(formula = GA_week~.,
+  neuralnet(formula = GA~.,
             data = sample_data_x_y_nnet, 
             hidden =  c(5, 3), 
             act.fct = "logistic",
             linear.output = TRUE)
 
 nnet_regression8 <- 
-  neuralnet(formula = GA_week~.,
+  neuralnet(formula = GA~.,
             data = sample_data_x_y_nnet, 
             hidden = 8, 
             act.fct = "logistic",
