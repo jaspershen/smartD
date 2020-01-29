@@ -1,20 +1,82 @@
 ####for RF
-setwd("data_analysis20191015/prediction/identification_table/RF/")
+sxtTools::setwd_project()
+setwd("data_analysis20200108/prediction/metabolites/RF/GA_prediction/")
 ###normal data
 library(randomForest)
+
+
+##load dataa
+load("../../sample_data_dis")
+load("../../sample_data_val")
+load("../../sample_data_dis_x")
+load("../../sample_data_val_x")
+load("../../metabolite_tags")
+
+##############################################################################
+####random forest
+#############################################################################
+library(randomForest)
 ##use boruta method
+library(Boruta)
+library(tidyverse)
+
+sample_data_dis_y <- 
+  sample_data_dis %>% 
+  dplyr::select(GA) %>% 
+  as.matrix()
+
+sample_data_val_y <- 
+  sample_data_val %>% 
+  dplyr::select(GA) %>% 
+  as.matrix()
+
+marker_rf <- 
+  readr::read_csv("marker_rf.csv")
+
+
+####parameter tunning
+sample_data_dis_x_rf <- 
+  sample_data_dis_x %>% 
+  as.data.frame() %>% 
+  dplyr::select(., one_of(marker_rf$name)) %>% 
+  as.matrix()
+
+sample_data_dis_x_rf <- 
+  apply(sample_data_dis_x_rf, 2, as.numeric)
+
+sample_data_val_x_rf <- 
+  sample_data_val_x %>% 
+  as.data.frame() %>% 
+  dplyr::select(., one_of(marker_rf$name)) %>% 
+  as.matrix()
+
+sample_data_val_x_rf <- 
+  apply(sample_data_val_x_rf, 2, as.numeric)
+
+
 rf_regression <-
-  randomForest(x = sample_data_dis_x, 
+  randomForest(x = sample_data_dis_x_rf, 
                y = sample_data_dis_y[,1], 
                replace = TRUE, 
                importance = TRUE,
-               proximity = TRUE)
+               proximity = TRUE, 
+               mtry = 2)
+
+
+
+
+##validate in validation dataset
+###construct dataset for lasso regression
+sample_data_val_x_rf <- 
+  sample_data_val_x %>% 
+  as_tibble() %>% 
+  dplyr::select(one_of(marker_rf$name))
 
 ###use validation dataset for validation
 predicted_y <-
   predict(
     object = rf_regression,
-    newdata = sample_data_val_x
+    newdata = sample_data_val_x_rf
     # type = "response"
   )
 
@@ -24,24 +86,22 @@ real_rmse <-
 real_r2 <- 
   summary(lm(formula = predicted_y~sample_data_val_y[,1]))$adj.r.squared
 
+fake_rmse <- vector(mode = "numeric", length = 100)
+fake_r2 <- vector(mode = "numeric", length = 100)
 
-
-fake_rmse <- vector(mode = "numeric", length = 1000)
-fake_r2 <- vector(mode = "numeric", length = 1000)
-
-for(i in 1:1000){
+for(i in 1:100){
   cat(i, " ")
   fake_dis_y <- 
     sample_data_dis_y[,1][sample(1:nrow(sample_data_dis_y))]
   fake_val_y <- 
     sample_data_val_y[,1][sample(1:nrow(sample_data_val_y))]
+  
   rf_regression <-
     randomForest(x = sample_data_dis_x, 
                  y = fake_dis_y, 
                  replace = TRUE, 
                  importance = TRUE,
                  proximity = TRUE)
-  
   ###use validation dataset for validation
   predicted_y <-
     predict(
@@ -70,6 +130,7 @@ ggplot(aes(value)) +
   geom_line(aes(x = value), colour = "#8A9045FF", size = 1, stat = "density") +
   geom_rug(aes(x = value), colour = "grey") +
   scale_x_continuous(limits = c(3, 7.3)) +
+  labs(x = "RMSE", y = "Density") +
   theme_bw() +
   geom_vline(xintercept = real_rmse, linetype = 2, 
              colour = "#C16622FF", size = 1) +
@@ -81,7 +142,7 @@ ggplot(aes(value)) +
 plot1
 library(grid)
 vie <-
-  viewport(x = 0.6, y = 0.5, width = 0.4, height = 0.5)
+  viewport(x = 0.4, y = 0.5, width = 0.4, height = 0.5)
 
 plot2 <- 
   fake_rmse %>% 
@@ -112,7 +173,7 @@ fake_r2 %>%
   #                fill = "#155F83FF") +
   geom_line(aes(x = value), colour = "#155F83FF", size = 1, stat = "density") +
   geom_rug(aes(x = value), colour = "grey") +
-  scale_x_continuous(limits = c(-0.01, 0.67)) +
+  scale_x_continuous(limits = c(-0.01, 0.8)) +
   theme_bw() +
   geom_vline(xintercept = real_r2, linetype = 2, 
              colour = "#C16622FF", size = 1) +

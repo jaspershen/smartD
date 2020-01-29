@@ -3,6 +3,7 @@ library(plyr)
 library(igraph)
 library(dplyr)
 ##first set the work directory to project folder
+sxtTools::setwd_project()
 setwd("data_analysis20191015/prediction/identification_table/")
 
 #####################################################################################################
@@ -205,3 +206,29 @@ save(sample_data_dis_x, file = "sample_data_dis_x")
 save(sample_data_val_x, file = "sample_data_val_x")
 
 save(metabolite_tags, file = "metabolite_tags")
+
+
+
+
+##information for discovery and validation patients
+
+###BMI
+patient_id_dis <- 
+  sample_data_dis$Patient_ID %>% 
+  unique()
+
+patient_id_val <- 
+  sample_data_val$Patient_ID %>% 
+  unique()
+
+sample_data_dis$GA
+sample_data_val$GA
+
+data.frame(ga = c(sample_data_dis$GA, sample_data_val$GA), 
+           class = c(rep("dis", nrow(sample_data_dis)), rep("val", nrow(sample_data_val))),
+           stringsAsFactors = FALSE) %>% 
+  ggplot(aes(x = class, y = ga, colour = class)) +
+  geom_boxplot() +
+  geom_jitter() +
+  theme_bw()
+  

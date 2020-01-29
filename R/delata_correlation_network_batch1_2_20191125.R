@@ -1,72 +1,15 @@
 #######construct delta correlation network
 #####smartd_rplc_batch dataset is used to analysis for correlation networks analysis
 #### step 1 remove the duplicated metabolites according to score
-setwd("data_analysis20191015/correlation_network/identification_table/POS_NEG/delta_sectional_network/")
-
-delta_temp <- 
-  smartd_rplc %>% 
-  select(-(name:Database))
-
-table(which(is.na(delta_temp), arr.ind = TRUE)[,2])
-colnames(delta_temp)[c(3, 4, 5, 338, 339, 340, 341, 342, 343, 344, 345)]
-sum(is.na(delta_temp))
-
-##X100, X101, X102, X114, X115, X151, X152, X159, X85, X92, SFU65 
-#have no positive data, so remove it
-delta_temp <- 
-  delta_temp %>% 
-  select(., -c(X100, X101, X102, X114, X115, X151, X152, X159, X85, X92, SFU65))
-
+sxtTools::setwd_project()
+setwd("data_analysis20191125/metabolite_table/correlation_network/delta_network/")
+metabolite_table <- readr::read_csv("../cross_sectional_network/metabolite_table_cross.csv")
+library(tidyverse)
 ###calculate correlation matrix
 ###delta network
-sfu1_148 <- 
-  readr::read_csv("E:/project/smartD/patient information/SFU1-148_GA.csv")
-
-patient_info <- 
-  readr::read_csv("E:/project/smartD/data_analysis20190828/patient_info/patient_info.csv")
-
-sfu1_148 <- 
-  sfu1_148 %>% 
-  mutate(subject_id = as.character(subject_id), visit = as.character(visit)) %>% 
-  arrange(subject_id)
-
-patient_info <- 
-  patient_info %>% 
-  mutate(Patient_ID = as.character(Patient_ID), Visit = as.character(Visit)) %>% 
-  arrange(Patient_ID)
-
-match(colnames(delta_temp), sfu1_148$sample_id)
-
-
-##only remain batch 1 samples
-delta_temp <- 
-  delta_temp %>% 
-  select(one_of(sfu1_148$sample_id))
-
-delta_temp <- 
-  log(delta_temp, 10) %>% 
-  as.data.frame(delta_temp)
-
-####log 10 and scale
-delta_temp <-
-  apply(delta_temp, 1, function(x){
-    (x - mean(x))/sd(x)
-  })
-
-delta_temp <- 
-  delta_temp %>% 
-  as.data.frame() %>% 
-  rownames_to_column(., var = "Sample_name")
-
-colnames(delta_temp)[-1] <- 
-  smartd_rplc$name
-
-delta_temp <- 
-  inner_join(x = sfu1_148[,-1], delta_temp, by = c("sample_id" = "Sample_name"))
-
 ####according to the GA information, we shoud class them to different peroid
-delta_temp %>% 
-  ggplot(., aes(x = GA_week)) +
+metabolite_table %>% 
+  ggplot(., aes(x = GA)) +
   geom_histogram(colour = "white", binwidth = 5, 
                  fill = "#8A9045CC", boundary = 10) +
   theme_bw() +
@@ -74,81 +17,81 @@ delta_temp %>%
   theme(axis.text = element_text(size = 13), 
         axis.title = element_text(size = 15))
 
-hist(delta_temp$GA_week)
-range(delta_temp$GA_week)
+hist(metabolite_table$GA)
+range(metabolite_table$GA)
 
 library(plyr)
 
-lapply(delta_temp %>%
-         plyr::dlply(., .(subject_id)),
+##for each patient, the  GA weeks for her samples
+lapply(metabolite_table %>%
+         plyr::dlply(., .(Patient_ID)),
        function(x)
-         x$GA_week)
+         x$GA)
 
-delta_temp <- 
-  delta_temp %>% 
-  mutate(GA_range = case_when(delta_temp$GA_week > 10 & delta_temp$GA_week <= 15 ~ {"10_15"},
-                              delta_temp$GA_week > 15 & delta_temp$GA_week <= 20 ~ {"15_20"},
-                              delta_temp$GA_week > 20 & delta_temp$GA_week <= 25 ~ {"20_25"},
-                              delta_temp$GA_week > 25 & delta_temp$GA_week <= 30 ~ {"25_30"},
-                              delta_temp$GA_week > 30 & delta_temp$GA_week <= 35 ~ {"30_35"},
-                              delta_temp$GA_week > 35 & delta_temp$GA_week <= 40 ~ {"35_40"},
-                              delta_temp$GA_week > 40 & delta_temp$GA_week <= 45 ~ {"40_45"}
+metabolite_table <- 
+  metabolite_table %>% 
+  mutate(GA_range = case_when(GA > 10 & GA <= 15 ~ {"10_15"},
+                              GA > 15 & GA <= 20 ~ {"15_20"},
+                              GA > 20 & GA <= 25 ~ {"20_25"},
+                              GA > 25 & GA <= 30 ~ {"25_30"},
+                              GA > 30 & GA <= 35 ~ {"30_35"},
+                              GA > 35 & GA <= 40 ~ {"35_40"},
+                              GA > 40 & GA <= 45 ~ {"40_45"}
                               ###10-15,15-20,20-25,25-30,30-35,35-40,40-45
   ))
 
 
 lapply(
-  plyr::dlply(delta_temp, .variables = .(subject_id)),
+  plyr::dlply(metabolite_table, .variables = .(Patient_ID)),
   function(x) x$GA_range
 )
 
 
 lapply(
-  plyr::dlply(delta_temp, .variables = .(subject_id)),
-  function(x) x$GA_week
+  plyr::dlply(metabolite_table, .variables = .(Patient_ID)),
+  function(x) x$GA
 )
 
-
 ####round the GA
-delta_temp <- 
-  delta_temp %>% 
-  mutate(GA_round = round(GA_week))
+metabolite_table_delta <- 
+  metabolite_table %>% 
+  mutate(GA_round = round(GA))
 
 lapply(
-  plyr::dlply(delta_temp, .variables = .(subject_id)),
+  plyr::dlply(metabolite_table_delta, .variables = .(Patient_ID)),
   function(x) x$GA_round
 ) %>% 
   unlist() %>% 
   table() %>% 
   sort()
 
-delta_temp <-
-  delta_temp %>% 
-  plyr::dlply(., .(subject_id)) %>% 
+metabolite_table_delta <-
+  metabolite_table_delta %>% 
+  plyr::dlply(., .(Patient_ID)) %>% 
   lapply(., function(x){
     x <- x %>% arrange(., GA_range)
     x <- x[!duplicated(x$GA_range),,drop = FALSE]
   })
 
-delta_temp <-
-  delta_temp %>% 
+metabolite_table_delta <-
+  metabolite_table_delta %>% 
   dplyr::bind_rows()
 
 ####upset to show the venn diagram
 library(UpSetR)
-delta_temp_data <-
+temp_data <-
   lapply(
-    plyr::dlply(delta_temp, .variables = .(subject_id)),
+    plyr::dlply(metabolite_table_delta, .variables = .(Patient_ID)),
     function(x) x$GA_range
   )
 
 total_week <-
-  unique(unlist(delta_temp_data)) %>%
+  unique(unlist(temp_data)) %>%
   unname() %>%
   sort()
 
-delta_temp_data <-
-  lapply(delta_temp_data, function(x){
+temp_data <-
+  lapply(temp_data, function(x){
     sapply(total_week, function(y) {
       if(y %in% x){
         1
@@ -158,8 +101,8 @@ delta_temp_data <-
     })
   })
 
-delta_temp_data <-
-  delta_temp_data %>%
+temp_data <-
+  temp_data %>%
   bind_cols()
 
 # delta_temp_data <-
@@ -167,48 +110,48 @@ delta_temp_data <-
 #   as.data.frame()
 # colnames(delta_temp_data) <- total_week
 
-rownames(delta_temp_data) <- total_week
+rownames(temp_data) <- total_week
 
-delta_temp_data <-
-  delta_temp_data %>%
+temp_data <-
+  temp_data %>%
   rownames_to_column(., var = "GA_range")
 
-upset(as.data.frame(delta_temp_data),
+upset(as.data.frame(temp_data),
       text.scale = c(1.5, 1.5, 1.5, 1.5, 1.5, 1.5),
       # sets = colnames(delta_temp_data)[-1],
       nintersects = NA, keep.order = FALSE,
       # matrix.color = c("grey","#155F83CC"),
       # main.bar.color = "red",
       mainbar.y.label = "Intercetion",
-      sets.x.label = "Number of samples",
-      queries = list(
-        list(
-          query = intersects,
-          params = list("1554", "1555", "1556", "1650", "1626"),
-          active = TRUE,
-          color = "#FFA319CC"
-        )
-      )
+      sets.x.label = "Number of samples"
+      # queries = list(
+      #   list(
+      #     query = intersects,
+      #     params = list("1554", "1555", "1556", "1650", "1626"),
+      #     active = TRUE,
+      #     color = "#FFA319CC"
+      #   )
+      # )
 )
 
 
 #####
-delta_temp_data %>% 
-  select(., c("1554", "1555", "1556", "1650", "1626")) %>% 
+temp_data %>% 
+  select(., c("SF1728", "SF1755", "SF1764", "SF1766", "SF1626")) %>% 
   apply(., 2, function(x){
-    delta_temp_data$GA_range[which(x == 1)]
+    temp_data$GA_range[which(x == 1)]
   }) %>% 
   Reduce(intersect, .)
 
-#####so we know that we should use the subjects: 1554, 1555, 1556, 1650, 1626, and time points
+#####so we know that we should use the subjects: "SF1728", "SF1755", "SF1764", "SF1766", "SF1626", and time points
 ##"15_20" "20_25" "25_30" "30_35" "35_40" to construct the delta correlation network
 
-delta_temp2 <- 
-  delta_temp %>% 
-  filter(., subject_id %in% c("1554", "1555", "1556", "1650", "1626")) %>% 
+metabolite_table_delta2 <- 
+  metabolite_table_delta %>% 
+  filter(., Patient_ID %in% c("SF1728", "SF1755", "SF1764", "SF1766", "SF1626")) %>% 
   filter(., GA_range %in% c("15_20", "20_25", "25_30", "30_35", "35_40")) %>% 
   # select(contains("_POS|subject_id")) %>% 
-  plyr::dlply(., .(subject_id)) %>% 
+  plyr::dlply(., .(Patient_ID)) %>% 
   lapply(., function(x){
     x <- 
       x %>% 
@@ -216,9 +159,9 @@ delta_temp2 <-
   })
 
 
-delta_temp2 <-
+metabolite_table_delta2 <-
   # test <- 
-  delta_temp2 %>% 
+  metabolite_table_delta2 %>% 
   lapply(., function(x){
     x1 <- x[-nrow(x),]
     x2 <- x[-1, ]
@@ -228,7 +171,7 @@ delta_temp2 <-
 
 
 delta_correlation_matrix <-
-  delta_temp2 %>%
+  metabolite_table_delta2 %>%
   as.matrix(.) %>%
   cor(., method = "spearman")
 
@@ -264,18 +207,21 @@ delta_correlation_p <-
     peak1 <- as.character(x[1])
     peak2 <- as.character(x[2])
     int1 <-
-      pull(delta_temp2, var = peak1)
+      pull(metabolite_table_delta2, var = peak1)
     int2 <-
-      pull(delta_temp2, var = peak2)
+      pull(metabolite_table_delta2, var = peak2)
     p <-  cor.test(int1, int2, 
                    alternative = "two.sided",
                    method = "spearman")$p.value
     p
   })
 
+sum(delta_correlation_p < 0.05)
+
 ###p adjustment
 delta_correlation_p2 <- 
   p.adjust(delta_correlation_p, method = "BH")
+sum(delta_correlation_p2 < 0.05)
 
 delta_correlation_data <- 
   delta_correlation_data %>% 

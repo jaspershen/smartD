@@ -176,3 +176,37 @@ setwd_project <- function(){
   }
   
 }
+
+
+trans_ht <- function(x){
+  x <- 
+    stringr::str_replace(x, "cm", "")
+  x_inch <- x[grep("'", x)]
+  if(length(x_inch) > 0){
+    x_inch <-  
+      stringr::str_split(x_inch, "'")  %>% 
+      lapply(function(y){
+        y[2] <- stringr::str_replace(y[2], '"', "")
+        (as.numeric(y[1]) * 12 + as.numeric(y[2])) * 2.54
+      }) %>% 
+      unlist()
+    x[grep("'", x)] <- 
+      x_inch
+  }
+  x <- as.numeric(x)
+  x
+}
+
+
+trans_wt <- function(x){
+  sapply(x, function(y){
+    if(stringr::str_detect(y, "kg")){
+      y <- stringr::str_replace(y, "kg", "") %>% 
+        as.numeric()
+    }else{
+      y <- as.numeric(y) * 0.4535922921969
+    }
+    y
+  }) %>% 
+    unname()
+}

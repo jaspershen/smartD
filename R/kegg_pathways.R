@@ -2,6 +2,16 @@ library(KEGGgraph)
 library(KEGGREST)
 library(KEGGlincs)
 library(tidyverse)
+
+
+FoxO_KGML <- get_KGML("map00564")
+slot(FoxO_KGML, "pathwayInfo")
+
+image_link <- slot(slot(FoxO_KGML, "pathwayInfo"), "image")
+download.file(url = image_link, destfile = basename(image_link), mode = "wb")
+
+
+
 ##get the ID of all hsa pathways
 KEGGREST::listDatabases()
 path_ID <- 
@@ -26,8 +36,8 @@ for(i in i:length(path_ID)){
   }
   # slot(object = temp_kgml, name = "pathwayInfo")
   #Download a static pathway image (png file) to working directory:
-  # temp_image_link <- slot(slot(temp_kgml, "pathwayInfo"), "image")
-  # download.file(temp_image_link, basename(temp_image_link), mode = "wb")
+  temp_image_link <- slot(slot(temp_kgml, "pathwayInfo"), "image")
+  download.file(temp_image_link, basename(temp_image_link), mode = "wb")
   temp_kegg_mappings <- expand_KEGG_mappings(KGML_file = temp_kgml)
   temp_kegg_edges <- expand_KEGG_edges(temp_kgml, temp_kegg_mappings)
   #Modify existing data sets; specify as nodes and edges

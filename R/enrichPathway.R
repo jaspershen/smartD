@@ -118,7 +118,6 @@ enrichPathway <- function(id,
   # -----------------------
   p_value_bh <- p.adjust(p_value, method = "BH")
   p_value_fdr <- p.adjust(p_value, method = "fdr")
-  
   # ----------------------
   #Result
   # ----------------------

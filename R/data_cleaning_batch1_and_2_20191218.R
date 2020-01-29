@@ -1,78 +1,82 @@
-###This script is for data cleaning for batch 1 and batch 2. Batch 1 and batch 2 data are processed using XCMS
-##together
-setwd("smartD_batch1_2/RPLC_xcms/POS/data_cleaning/")
+sxtTools::setwd_project()
+library(tidyverse)
 
-###construct sample information
-# sample_info1 <-
-#   readr::read_csv("sample_info1.csv")
-# 
-# sample_info2 <-
-#   readr::read_csv("sample_info2.csv")
-# 
-# 
-# sample_info1$sample.name
-# sample_info2$sample.name
-# 
-# peak_table <- 
-#   readr::read_csv("Peak.table.csv")
-# 
-# 
-# intersect(c(sample_info1$sample.name, sample_info2$sample.name),
-#           colnames(peak_table))
-# 
-# 
-# setdiff(c(sample_info1$sample.name, sample_info2$sample.name),
-#         colnames(peak_table))
-# 
-# setdiff(colnames(peak_table),
-#         c(sample_info1$sample.name, 
-#           sample_info2$sample.name)
-# )
-# 
-# sample_info2$batch <- 2
-# 
-# ###remove QC_DL samples
-# 
-# sample_info1 <-
-#   sample_info1 %>% 
-#   filter(., !stringr::str_detect(sample.name, "DL"))
-# 
-# sample_info2 <-
-#   sample_info2 %>% 
-#   filter(., !stringr::str_detect(sample.name, "DL"))
-# 
-# sample_info <- 
-#   rbind(sample_info1, sample_info2)
-# 
-# 
-# peak_table <- 
-#   peak_table %>% 
-#   select(., -contains("DL"))
-# 
-# setdiff(sample_info$sample.name,
-#         colnames(peak_table))
-# 
-# setdiff(colnames(peak_table),
-#         sample_info$sample.name
-# )
-# 
-# ##remove "QC2.4" and "QC2.5" from peak_table
-# peak_table <- 
-#   peak_table %>% 
-#   select(-c(QC2.4, QC2.5))
-# 
-# 
-# write.csv(peak_table, "peak_table.csv", row.names = FALSE)
-# write.csv(sample_info, "sample_info.csv", row.names = FALSE)
+####Positive mode
+setwd("data_analysis20191125/20191218/RPLC/POS/")
+sample_info <- readr::read_csv("sample_info.csv")
+peak_table <- readr::read_csv("Peak.table.csv")
+
+colnames(peak_table)
+sample_info$sample.name
+
+##remove duplicated samples
+name <- grep("_[0-9]{4,15}", colnames(peak_table), value = TRUE)
+
+test <- 
+peak_table %>% 
+  select(dplyr::starts_with(stringr::str_split(name[4], "_")[[1]][1]))
 
 
-##RPLC positive
-###creat object class
-setwd("smartD_batch1_2/RPLC_xcms/POS/data_cleaning/")
+plot(test$QCU28, test$QCU28_171203020739)
+
+
+remove_name <- NULL
+for(i in seq_along(name)){
+  temp_name <- name[i] %>% 
+    stringr::str_split("_") %>% 
+    `[[`(1) %>% 
+    `[`(1)
+  
+  temp_peak_table <- 
+    peak_table %>% 
+    select(starts_with(temp_name))
+  
+  
+  remove_name <- c(
+  remove_name, 
+  apply(temp_peak_table, 2, function(x) sum(is.na(x))) %>% 
+    which.min() %>% 
+    names() %>% 
+    `!=`(colnames(temp_peak_table)) %>% 
+    which() %>% 
+    `[`(colnames(temp_peak_table), .)
+  )
+}
+
+
+peak_table <- 
+  peak_table %>% 
+  select(-remove_name)
+
+
+##remove wrong names
+colnames(peak_table) <- 
+colnames(peak_table) %>% 
+  sapply(function(x){
+    if(stringr::str_detect(x, '_[0-9]{10,20}')){
+      x <- stringr::str_replace(x, '_[0-9]{10,20}', "")
+      x
+    }else{
+     return(x) 
+    }
+  }) %>% 
+  unname()
+
+
+setdiff(colnames(peak_table), sample_info$sample.name)
+ 
+setdiff(sample_info$sample.name, colnames(peak_table))
+
+readr::write_csv(peak_table, "peak_table.csv")
+
+
+
+####data cleaning
 library(metflow2)
+library(tidyverse)
 
 (
-  smartd_rplc_pos_1 <-
+  rplc_pos_1 <-
     creatMetflowObject(
       ms1.data = "peak_table.csv",
       sample.information = "sample_info.csv",
@@ -80,17 +84,17 @@ library(metflow2)
     )
 )
 
-save(smartd_rplc_pos_1, file = "smartd_rplc_pos_1")
+save(rplc_pos_1, file = "rplc_pos_1")
 
 
 ###remove peaks
 (
-  smartd_rplc_pos_2 <-
+  rplc_pos_2 <-
     filterPeak(
-      object = smartd_rplc_pos_1,
+      object = rplc_pos_1,
       min.fraction.qc = 0.8,##QC at least more than 80%
-      min.fraction = 0.5,
-      min.subject.qc.ratio = 1,
+      min.fraction = 0.2,##Subject no restraction
+      min.subject.qc.ratio = 0,##don't use blank to remove any peaks
       dl.qc.r2.cutoff = 0
     )
 )
@@ -98,14 +102,14 @@ save(smartd_rplc_pos_1, file = "smartd_rplc_pos_1")
 
 ###remove some samples (outliers)
 (
-  smartd_rplc_pos_3 <-
-    filterSample(object = smartd_rplc_pos_2,
+  rplc_pos_3 <-
+    filterSample(object = rplc_pos_2,
                  min.fraction.peak = 0.5)
 )
 
 (
   plot <- 
-    getMVplot4sample(object = smartd_rplc_pos_3)
+    getMVplot4sample(object = rplc_pos_3)
 )
 
 
@@ -113,14 +117,14 @@ save(smartd_rplc_pos_1, file = "smartd_rplc_pos_1")
 
 ###MV imputateion
 (
-  smartd_rplc_pos_4 <- 
-    imputeMV(object = smartd_rplc_pos_3, method = 'knn')
+  rplc_pos_4 <- 
+    imputeMV(object = rplc_pos_3, method = 'knn')
 )
 
-save(smartd_rplc_pos_4, file = "smartd_rplc_pos_4")
+save(rplc_pos_4, file = "rplc_pos_4")
 
 # qc_data <- 
-#   getData(object = smartd_rplc_pos_batch1_4, slot = "QC")
+#   getData(object = rplc_pos_batch1_4, slot = "QC")
 # 
 # qc_data <- t(apply(qc_data, 1, function(x){
 #   (x - mean(x))/sd(x)
@@ -162,7 +166,7 @@ save(smartd_rplc_pos_4, file = "smartd_rplc_pos_4")
 
 
 ###RSD distribution
-qc_rsd <- calRSD(object = smartd_rplc_pos_4, slot = "QC")
+qc_rsd <- calRSD(object = rplc_pos_4, slot = "QC")
 
 (plot1 <- 
     ggplot(data = qc_rsd, aes(index, rsd)) +
@@ -209,83 +213,120 @@ qc_rsd <- calRSD(object = smartd_rplc_pos_4, slot = "QC")
 ####data normalization
 
 (
-  smartd_rplc_pos_5 <- 
-    normalizeData(object = smartd_rplc_pos_4, 
+  rplc_pos_5 <- 
+    normalizeData(object = rplc_pos_4, 
                   method = "mean")
 )
 
-
+save(rplc_pos_5, file = "rplc_pos_5")
 ###batch intergration
 
 (
-  smartd_rplc_pos_5 <- 
+  rplc_pos_6 <- 
     metflow2:::integrateData(
-      object = smartd_rplc_pos_5, 
+      object = rplc_pos_5, 
       method = "subject.mean")
 )
 
-qc_rsd <- calRSD(object = smartd_rplc_pos_5, 
+qc_rsd <- calRSD(object = rplc_pos_6, 
                  slot = "QC")
 
 plot(qc_rsd$rsd)
-save(smartd_rplc_pos_5, file = "smartd_rplc_pos_5")
+save(rplc_pos_6, file = "rplc_pos_6")
 
 
 
 
 
+####negative mode
+sxtTools::setwd_project()
+setwd("data_analysis20191125/20191218/RPLC/NEG/")
+sample_info <- readr::read_csv("sample_info.csv")
+peak_table <- readr::read_csv("Peak.table.csv")
+
+colnames(peak_table)
+sample_info$sample.name
+
+##remove duplicated samples
+name <- grep("_[0-9]{4,15}", colnames(peak_table), value = TRUE)
+
+test <- 
+  peak_table %>% 
+  select(dplyr::starts_with(stringr::str_split(name[4], "_")[[1]][1]))
 
 
+# plot(test$QCU28, test$QCU28_171203020739)
+
+remove_name <- NULL
+for(i in seq_along(name)){
+  temp_name <- name[i] %>% 
+    stringr::str_split("_") %>% 
+    `[[`(1) %>% 
+    `[`(1)
+  
+  temp_peak_table <- 
+    peak_table %>% 
+    select(starts_with(temp_name))
+  
+  
+  remove_name <- c(
+    remove_name, 
+    apply(temp_peak_table, 2, function(x) sum(is.na(x))) %>% 
+      which.min() %>% 
+      names() %>% 
+      `!=`(colnames(temp_peak_table)) %>% 
+      which() %>% 
+      `[`(colnames(temp_peak_table), .)
+  )
+}
 
 
-##RPLC negative
-###creat object class
-# setwd("smartD_batch1_2/RPLC_xcms/NEG/data_cleaning/")
-# sample_info <- 
-#   readr::read_csv("sample_info.csv")
-# 
-# peak_table <- 
-#   readr::read_csv("Peak.table.csv")
-# 
-# setdiff(colnames(peak_table),
-#         sample_info$sample.name)
-# 
-# setdiff(sample_info$sample.name,
-#         colnames(peak_table)
-# )
-# 
-# 
-# ###remove the samples which are not in sample_info or 
-# name1 <-
-#   setdiff(colnames(peak_table),
-#           sample_info$sample.name) 
-# 
-# name1 <-
-#   name1[!name1 %in% c("name", "mz", "rt")]
-# 
-# peak_table <- 
-#   peak_table %>% 
-#   select(-name1)
-# 
-# 
-# name2 <-
-#   setdiff(sample_info$sample.name,
-#           colnames(peak_table)
-#   )
-#   
-# sample_info <- 
-#   sample_info %>% 
-#   filter(!sample.name%in%name2)
-# 
-# 
-# write.csv(sample_info, "sample_info.csv", row.names = FALSE)  
-# write.csv(peak_table, "peak_table.csv", row.names = FALSE)
+peak_table <- 
+  peak_table %>% 
+  select(-remove_name)
 
 
+##remove wrong names
+colnames(peak_table) <- 
+  colnames(peak_table) %>% 
+  sapply(function(x){
+    if(stringr::str_detect(x, '_[0-9]{10,20}')){
+      x <- stringr::str_replace(x, '_[0-9]{10,20}', "")
+      x
+    }else{
+      return(x) 
+    }
+  }) %>% 
+  unname()
+
+name1 <- 
+  setdiff(colnames(peak_table), sample_info$sample.name)
+
+peak_table <-
+  peak_table %>% 
+  mutate(name = peak.name,
+         mz = mzmed,
+         rt = rtmed) %>% 
+  select(-name1) %>% 
+  select(name:rt, everything())
+
+name2 <- 
+  setdiff(sample_info$sample.name, colnames(peak_table))
+
+sample_info <- 
+  sample_info %>% 
+  filter(!sample.name %in% name2)
+
+
+readr::write_csv(peak_table, "peak_table.csv")
+readr::write_csv(sample_info, "sample_info.csv")
+
+####data cleaning
 library(metflow2)
+library(tidyverse)
 
 (
-  smartd_rplc_neg_1 <-
+  rplc_neg_1 <-
     creatMetflowObject(
       ms1.data = "peak_table.csv",
       sample.information = "sample_info.csv",
@@ -293,17 +334,17 @@ library(metflow2)
     )
 )
 
-save(smartd_rplc_neg_1, file = "smartd_rplc_neg_1")
+save(rplc_neg_1, file = "rplc_neg_1")
 
 
 ###remove peaks
 (
-  smartd_rplc_neg_2 <-
+  rplc_neg_2 <-
     filterPeak(
-      object = smartd_rplc_neg_1,
+      object = rplc_neg_1,
       min.fraction.qc = 0.8,##QC at least more than 80%
-      min.fraction = 0.5,
-      min.subject.qc.ratio = 1,
+      min.fraction = 0.2,##Subject no restraction
+      min.subject.qc.ratio = 0,##don't use blank to remove any peaks
       dl.qc.r2.cutoff = 0
     )
 )
@@ -311,14 +352,14 @@ save(smartd_rplc_neg_1, file = "smartd_rplc_neg_1")
 
 ###remove some samples (outliers)
 (
-  smartd_rplc_neg_3 <-
-    filterSample(object = smartd_rplc_neg_2,
+  rplc_neg_3 <-
+    filterSample(object = rplc_neg_2,
                  min.fraction.peak = 0.5)
 )
 
 (
   plot <- 
-    getMVplot4sample(object = smartd_rplc_neg_3)
+    getMVplot4sample(object = rplc_neg_3)
 )
 
 
@@ -326,14 +367,14 @@ save(smartd_rplc_neg_1, file = "smartd_rplc_neg_1")
 
 ###MV imputateion
 (
-  smartd_rplc_neg_4 <- 
-    imputeMV(object = smartd_rplc_neg_3, method = 'knn')
+  rplc_neg_4 <- 
+    imputeMV(object = rplc_neg_3, method = 'knn')
 )
 
-save(smartd_rplc_neg_4, file = "smartd_rplc_neg_4")
+save(rplc_neg_4, file = "rplc_neg_4")
 
 # qc_data <- 
-#   getData(object = smartd_rplc_neg_batch1_4, slot = "QC")
+#   getData(object = rplc_neg_batch1_4, slot = "QC")
 # 
 # qc_data <- t(apply(qc_data, 1, function(x){
 #   (x - mean(x))/sd(x)
@@ -375,7 +416,7 @@ save(smartd_rplc_neg_4, file = "smartd_rplc_neg_4")
 
 
 ###RSD distribution
-qc_rsd <- calRSD(object = smartd_rplc_neg_4, slot = "QC")
+qc_rsd <- calRSD(object = rplc_neg_4, slot = "QC")
 
 (plot1 <- 
     ggplot(data = qc_rsd, aes(index, rsd)) +
@@ -422,27 +463,26 @@ qc_rsd <- calRSD(object = smartd_rplc_neg_4, slot = "QC")
 ####data normalization
 
 (
-  smartd_rplc_neg_5 <- 
-    normalizeData(object = smartd_rplc_neg_4, 
+  rplc_neg_5 <- 
+    normalizeData(object = rplc_neg_4, 
                   method = "mean")
 )
 
-
+save(rplc_neg_5, file = "rplc_neg_5")
 ###batch intergration
 
 (
-  smartd_rplc_neg_5 <- 
+  rplc_neg_6 <- 
     metflow2:::integrateData(
-      object = smartd_rplc_neg_5, 
+      object = rplc_neg_5, 
       method = "subject.mean")
 )
 
-qc_rsd <- calRSD(object = smartd_rplc_neg_5, 
+qc_rsd <- calRSD(object = rplc_neg_6, 
                  slot = "QC")
+
 plot(qc_rsd$rsd)
-
-save(smartd_rplc_neg_5, file = "smartd_rplc_neg_5")
-
+save(rplc_neg_6, file = "rplc_neg_6")
 
 
 

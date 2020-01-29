@@ -1,4 +1,5 @@
 ##first set the work directory to project folder
+sxtTools::setwd_project()
 setwd("data_analysis20191015/prediction/identification_table/")
 ##load dataa
 rm(list = ls())
@@ -27,6 +28,7 @@ sample_data_val_y <-
   dplyr::select(GA) %>% 
   as.matrix()
 
+set.seed(400)
 model.nn <- train(x = sample_data_dis_x,
                   y = sample_data_dis_y[,1],
                   trControl = trainControl(method = "cv", number = 7),
@@ -46,7 +48,7 @@ importance <-
   arrange(desc(Overall))
 
 
-importance[1:40,] %>% 
+importance[1:80,] %>% 
   left_join(., metabolite_tags, by = "name") %>% 
   arrange(Overall) %>% 
   ggplot(aes(x = factor(Compound.name, levels = Compound.name), y = Overall)) +
@@ -66,7 +68,7 @@ importance[1:40,] %>%
 ggsave(filename = "marker_ann.pdf", width = 7, height = 7)
 
 marker_ann <- 
-  importance[1:40,]
+  importance[1:80,]
 
 
 marker_ann <- 
@@ -87,10 +89,12 @@ sample_data_dis_x_y_ann <-
              stringsAsFactors = FALSE)
 
 
+set.seed(410)
 ann_regression <- 
   neuralnet(formula = GA~.,
             data = sample_data_dis_x_y_ann, 
-            hidden =  c(5, 3), 
+            hidden =  c(10, 10), 
+            # algorithm = "backprop",
             act.fct = "logistic",
             linear.output = TRUE)
 
@@ -98,6 +102,7 @@ ann_regression20 <-
   neuralnet(formula = GA~.,
             data = sample_data_dis_x_y_ann, 
             hidden = 20, 
+            # algorithm = "backprop",
             act.fct = "logistic",
             linear.output = TRUE)
 
@@ -114,7 +119,7 @@ library(NeuralNetTools)
 #   coord_flip()
 
 
-neuralnet::compute(x = ann_regression20, 
+neuralnet::compute(x = ann_regression, 
                    covariate = sample_data_dis_x_ann)$net.result %>% 
   plot(sample_data_dis_y)
 
@@ -135,10 +140,11 @@ sample_data_val_x_ann <-
 
 
 ###use validation dataset for validation
+set.seed(420)
 ann_regression <- 
   neuralnet(formula = GA~.,
             data = sample_data_dis_x_y_ann, 
-            hidden =  c(30, 20), 
+            hidden =  c(10, 10), 
             act.fct = "logistic",
             linear.output = TRUE)
 
@@ -188,7 +194,6 @@ cat(summary(lm(formula = predicted_y~sample_data_val_y[,1]))$adj.r.squared,
 cat("\n", file = "information.txt", append = TRUE)
 
 
-
 data.frame(
   measured = sample_data_val_y[, 1],
   predicted = predicted_y,
@@ -226,7 +231,7 @@ for(i in 1:100){
     neuralnet(formula = GA~.,
               data = data.frame(sample_data_dis_x_ann,
                                 sample_data_dis_y)[dis_index,],
-              hidden = c(30, 20),
+              hidden = c(10, 10),
               act.fct = "logistic",
               linear.output = TRUE)
   
@@ -292,6 +297,20 @@ ggsave("measured_vs_predicted_dis.pdf", width = 7, height = 7)
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 #################################################################################
 ####predicted time to due date
 #################################################################################
@@ -343,7 +362,7 @@ sample_data_dis_x_y_ann <-
              y = expected_date_remained_dis,
              stringsAsFactors = FALSE)
 
-
+set.seed(430)
 ann_regression <- 
   neuralnet(formula = y~.,
             data = sample_data_dis_x_y_ann, 
@@ -387,10 +406,11 @@ sample_data_val_x_ann <-
 
 
 ###use validation dataset for validation
+set.seed(440)
 ann_regression <- 
   neuralnet(formula = y~.,
             data = sample_data_dis_x_y_ann, 
-            hidden =  c(30, 20), 
+            hidden =  c(10, 10), 
             act.fct = "logistic",
             linear.output = TRUE)
 
@@ -476,7 +496,7 @@ for(i in 1:100){
     neuralnet(formula = y~.,
               data = data.frame(sample_data_dis_x_ann,
                                 y = expected_date_remained_dis)[dis_index,],
-              hidden = c(30, 20),
+              hidden = c(10, 10),
               act.fct = "logistic",
               linear.output = TRUE)
   
@@ -544,5 +564,69 @@ ggsave("measured_vs_predicted_dis.pdf", width = 7, height = 7)
 
 
 
+temp_data <- 
+  data.frame(model = c("Lasso", "RF", "SVM", "ANN"),
+             rmse_i = c(3.35, 3.27, 4.04, 3.89),
+             r2_i = c(0.69, 0.74, 0.62, 0.66),
+             rmse_e = c(3.59, 3.38, 4.16, 5.87),
+             r2_e = c(0.63, 0.70, 0.57, 0.33),
+             stringsAsFactors = FALSE)
+
+plot1 <- 
+  temp_data %>% 
+  select(model, rmse_i, rmse_e) %>% 
+  tidyr::pivot_longer(., -model, "Dataset") %>% 
+  mutate(model = factor(model, levels = rev(temp_data$model))) %>% 
+  ggplot(aes(model, value)) +
+  geom_bar(aes(fill = Dataset), colour = "white",
+           stat = "identity", position = position_dodge(), width = 0.5) +
+  scale_colour_manual(values = c("rmse_i" = "#FFA319FF",
+                                 "rmse_e" = "#155F83FF")) +
+  scale_fill_manual(values = c("rmse_i" = "#FFA319FF",
+                                 "rmse_e" = "#155F83FF")) +
+  scale_y_reverse() +
+  labs(x = "", y = "Root mean squared error (RMSE)") +
+  coord_flip() +
+  theme_bw() +
+  geom_text(aes(label = value, fill = Dataset), hjust = -1,
+            position = position_dodge(width = 0.5), size = 5, colour = "white") +
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 13), legend.position = "left", 
+        panel.border = element_blank(), panel.grid = element_blank(),
+        axis.line.x = element_line(colour = "black"),
+        plot.margin = margin(0,0, 0, 0),)
 
 
+
+plot1
+
+plot2 <- 
+temp_data %>% 
+  select(model, r2_i, r2_e) %>% 
+  tidyr::pivot_longer(., -model, "Dataset") %>% 
+  mutate(model = factor(model, levels = rev(temp_data$model))) %>% 
+  ggplot(aes(model, value)) +
+  geom_bar(aes(fill = Dataset), colour = "white", 
+           stat = "identity", position = position_dodge(), width = 0.5) +
+  scale_colour_manual(values = c("r2_i" = "#FFA3197F",
+                                 "r2_e" = "#155F837F")) +
+  scale_fill_manual(values = c("r2_i" = "#FFA3197F",
+                               "r2_e" = "#155F837F")) +
+  labs(x = "", y = "Adjusted R2 (RMSE)") +
+  coord_flip() +
+  theme_bw() +
+  geom_text(aes(label = value, fill = Dataset), hjust = 1,
+            position = position_dodge(width = 0.5), size = 5, colour = "white") +
+  theme(axis.title = element_text(size = 15),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.text = element_text(size = 13), legend.position = "right", 
+        panel.border = element_blank(), panel.grid = element_blank(),
+        axis.line.x = element_line(colour = "black"), 
+        plot.margin = margin(0,0, 0, 0),
+        axis.ticks.y = element_blank())
+
+library(patchwork)
+
+
+plot1 + plot2

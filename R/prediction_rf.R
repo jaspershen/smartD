@@ -1,4 +1,5 @@
 ##first set the work directory to project folder
+sxtTools::setwd_project()
 setwd("data_analysis20191015/prediction/identification_table/")
 rm(list = ls())
 ##load dataa
@@ -7,6 +8,7 @@ load("sample_data_val")
 load("sample_data_dis_x")
 load("sample_data_val_x")
 load("metabolite_tags")
+
 ##############################################################################
 ####random forest
 #############################################################################
@@ -15,6 +17,7 @@ setwd("RF/GA_prediction/")
 library(randomForest)
 ##use boruta method
 library(Boruta)
+library(tidyverse)
 
 sample_data_dis_y <- 
   sample_data_dis %>% 
@@ -171,6 +174,23 @@ plot(sample_data_dis_y[,1], prediction_self)
 abline(0, 1)
 
 
+data.frame(measured = sample_data_dis_y[,1], 
+           predicted = prediction_self,
+           stringsAsFactors = FALSE) %>% 
+  ggplot(aes(measured, predicted)) +
+  geom_abline(intercept = 0, slope = 1, linetype = 2) +
+  labs(x = "GA (weeks, measured)", y = "GA (weeks, predicted)") +
+  scale_x_continuous(limits = c(10, 42)) +
+  scale_y_continuous(limits = c(10, 42)) +
+  geom_point(size = 2, colour = "#FFA319FF") +
+  theme_bw() +
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 13),
+        plot.title = element_text(size = 15))
+
+ggsave("discovery_data_measured_vs_predicted.pdf", width = 7, height = 7)
+
+
 ###from here we can see that why should us linear regression to correct prediction
 data.frame(measured = sample_data_dis_y[,1],
            predicted = prediction_self,
@@ -192,8 +212,34 @@ data.frame(measured = sample_data_dis_y[,1],
 ggsave("measured_vs_predicted_error.pdf", width = 7, height = 7)
 
 
+
+
+
 linear_regression <- 
   lm(formula = sample_data_dis_y[,1] ~ prediction_self)
+
+linear_regression1 <- 
+  lm(formula = prediction_self ~ sample_data_dis_y[,1])
+
+
+data.frame(measured = sample_data_dis_y[,1], 
+           predicted = prediction_self,
+           stringsAsFactors = FALSE) %>% 
+  ggplot(aes(measured, predicted)) +
+  geom_abline(intercept = 0, slope = 1, linetype = 2) +
+  geom_abline(intercept = coef(linear_regression1)[1], 
+              slope = coef(linear_regression1)[2], 
+              linetype = 2, colour = "red") +
+  labs(x = "GA (weeks, measured)", y = "GA (weeks, predicted)") +
+  scale_x_continuous(limits = c(10, 42)) +
+  scale_y_continuous(limits = c(10, 42)) +
+  geom_point(size = 2, colour = "#FFA319FF") +
+  theme_bw() +
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 13),
+        plot.title = element_text(size = 15))
+
+ggsave("discovery_data_measured_vs_predicted2.pdf", width = 7, height = 7)
 
 predicted_y2 <- 
   coef(linear_regression)[2] * predicted_y + coef(linear_regression)[1]
@@ -691,3 +737,24 @@ temp %>%
         axis.text = element_text(size = 13))
 
 ggsave("measured_vs_predicted_dis.pdf", width = 7, height = 7)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+###use the 
