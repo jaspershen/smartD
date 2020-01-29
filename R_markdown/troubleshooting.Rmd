@@ -1,0 +1,12 @@
+---
+title: "Trouble shooting"
+output: html_notebook
+---
+
+
+
+```{r, echo=TRUE, eval=TRUE}
+sxtTools::setwd_project()
+getwd()
+# setwd("")
+```
