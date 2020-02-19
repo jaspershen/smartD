@@ -15,7 +15,6 @@ subject_data <- metflow2::getData(object = rplc_pos_6,
 qc_data <- metflow2::getData(rplc_pos_6,
                              slot = "QC")
 
-
 ###remove peaks with large RSD
 qc_rsd <- apply(qc_data, 1, function(x){
   sd(as.numeric(x))*100/mean(as.numeric(x))
