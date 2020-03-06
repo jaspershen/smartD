@@ -9,6 +9,7 @@ sxtTools::setwd_project()
 setwd("data_analysis20200108/data_cleaning/RPLC/NEG/")
 load("rplc_neg_6")
 
+
 ##get the identification results
 sxtTools::setwd_project()
 setwd("data_analysis20200108/metabolite_identification/RPLC/POS/")
@@ -34,7 +35,70 @@ identification_table_neg <-
 metabolite_table <- 
   rbind(identification_table_pos, identification_table_neg)
 
-###we only use the level 1 and level 2 identifications
+
+
+
+
+ms1_pos <- rplc_pos_6@ms1.data[[1]][,c(1,2,3)]
+ms1_neg <- rplc_neg_6@ms1.data[[1]][,c(1,2,3)]
+
+
+
+ms1 <- rbind(ms1_pos, ms1_neg)
+
+ms1 <- 
+  ms1 %>% 
+  left_join(metabolite_table, by = "name")
+
+
+ms1 <- 
+  ms1 %>% 
+  mutate(polarity = case_when(
+    stringr::str_detect(name, "POS") ~ "POS",
+    stringr::str_detect(name, "NEG") ~ "NEG",
+    TRUE ~ "NA"
+  ))
+
+
+
+ms1 <-
+  ms1 %>% 
+  mutate(Level2 = 
+           case_when(
+             Level == 1 ~ "Yes",
+             Level == 2 ~ "Yes",
+             Level == 3 ~ "No",
+             is.na(Level) ~ "Yes",
+             TRUE ~ "NA"
+           ))
+
+
+ms1$Level[is.na(ms1$Level)] <- 4
+
+ms1$Level[ms1$Level == 1] <- 2
+
+
+require(webr)
+require(moonBook)
+ PieDonut(ms1,aes(pies=polarity,donuts=Level), 
+         # explode = 1,
+         # explodePie = FALSE, 
+         selected = c(1,3,4,6),
+         explodeDonut = TRUE,
+         r0 = 0.4
+         # color = "grey"
+         )
+
+
+
+
+
+
+
+
+
+
+ ###we only use the level 1 and level 2 identifications
 #1-3 means identification confidence level, 4 means MS2 spectra match si not good enough, and 5 means this compound
 #may be not in human body
 metabolite_table <- 

@@ -698,7 +698,7 @@ info <-
 
 info <-
   info %>%
-  filter(ID %in% sample_info$Patient_ID)
+  dplyr::filter(ID %in% sample_info$Patient_ID)
 
 info$ID == unique(sample_info$Patient_ID)
 
@@ -886,6 +886,28 @@ clinical_data %>%
 
 cor.test(clinical_data$r2, 
          as.numeric(clinical_data$parity))
+
+
+
+clinical_data %>% 
+  ggplot(aes(x = ethinic, y = r2)) +
+  geom_boxplot() +
+  geom_jitter()
+
+
+clinical_data %>% 
+  ggplot(aes(x = sex, y = r2)) +
+  geom_boxplot() +
+  geom_jitter()
+
+
+clinical_data %>% 
+  ggplot(aes(x = induction, y = r2)) +
+  geom_boxplot() +
+  geom_jitter()
+
+
+
 
 
 

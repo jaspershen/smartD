@@ -93,7 +93,7 @@ for(i in 1:nrow(is_table_pos)){
 is_table_pos <- readxl::read_xlsx("./peak_shape/POS/is_table_pos.xlsx")
 marker_rf_pos <-
   is_table_pos %>% 
-  filter(note == "G") %>% 
+  dplyr::filter(note == "G") %>% 
   pull(name)
 
 peak_data_neg <- 
@@ -121,7 +121,7 @@ no_infi <- function(x) all(!is.infinite(x))
 is_table_neg <- readxl::read_xlsx("./peak_shape/NEG/is_table_neg.xlsx")
 marker_rf_neg <-
   is_table_neg %>% 
-  filter(note == "G") %>% 
+  dplyr::filter(note == "G") %>% 
   pull(name)
 
 marker_rf <- c(marker_rf_pos, marker_rf_neg)
@@ -182,6 +182,7 @@ colnames(marker_rf)[-1] <-
 
 write.csv(marker_rf, "marker_rf.csv", row.names = FALSE)
 
+# marker_rf <- readr::read_csv("marker_rf.csv")
 ####parameter tunning
 sample_data_dis_x_rf <- 
   sample_data_dis_x %>% 
@@ -354,7 +355,7 @@ abs(sample_data_val_y[,1] - predicted_y2) %>%
   mean()
 
 summary(lm(formula = predicted_y2~sample_data_val_y[,1]))
-
+cor.test(predicted_y2, sample_data_val_y[,1])
 write.table("Information", "information.txt")
 cat("RMSE for external validation dataset:\n", file = "information.txt", append = TRUE)
 cat(abs(sample_data_val_y[,1] - predicted_y2) %>% 
@@ -435,7 +436,7 @@ abs(temp$y - temp$mean) %>%
   mean()
 
 summary(lm(formula = temp$y~temp$mean))
-
+cor.test(temp$y, temp$mean)
 
 cat("RMSE for internal validation dataset:\n", file = "information.txt", append = TRUE)
 
@@ -886,3 +887,20 @@ temp %>%
         axis.text = element_text(size = 13))
 
 ggsave("measured_vs_predicted_dis.pdf", width = 7, height = 7)
+
+
+
+
+sxtTools::setwd_project()
+setwd("data_analysis20200108/prediction/features/")
+load("metabolite_tags")
+load("peak_tags")
+setwd("RF/GA_prediction/")
+marker <- readr::read_csv("marker_rf_final.csv")
+
+marker <- 
+marker %>% 
+  left_join(metabolite_tags, by = "name")
+
+
+marker$Compound.name

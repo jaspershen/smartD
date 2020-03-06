@@ -16,6 +16,10 @@ subject_data <- metflow2::getData(object = rplc_pos_6,
 qc_data <- metflow2::getData(rplc_pos_6,
                              slot = "QC")
 
+qc_data <- 
+  qc_data %>% 
+  select(-c(QC2.1, QC2.2, QC2.3, QC_0_25))
+
 ###remove peaks with large RSD
 qc_rsd <- apply(qc_data, 1, function(x){
   sd(as.numeric(x))*100/mean(as.numeric(x))
@@ -26,11 +30,7 @@ remain_idx <-
 
 
 subject_data <- subject_data[remain_idx,]
-
-# sample_info <-
-#   sample_info %>%
-#   filter(GA != 0)
-
+qc_data <- qc_data[remain_idx,]
 
 sample_info <- 
   sample_info %>% 
@@ -40,43 +40,63 @@ subject_data <-
   subject_data %>% 
   dplyr::select(one_of(sample_info$sample.name))
 
-
 ###log
 subject_data <- 
   log(subject_data)
+
+qc_data <- 
+  log(qc_data)
 
 subject_data <- 
   t(
     apply(subject_data, 1, function(x){
       (x - mean(x))/sd(x)
     })
-  )
+  ) %>% 
+  tibble::as_tibble()
 
 
-subject_data <-
-  subject_data %>% 
-  as_tibble()
-
-subject_data2 <- t(subject_data)
-subject_data2 <- as_tibble(subject_data2)
-rownames(subject_data2)
+qc_data <- 
+  t(
+    apply(qc_data, 1, function(x){
+      (x - mean(x))/sd(x)
+    })
+  ) %>% 
+  tibble::as_tibble()
 
 subject_data2 <- 
+  t(subject_data) %>% 
+  tibble::as_tibble()
+
+rownames(subject_data2)
+
+qc_data2 <- 
+  t(qc_data) %>% 
+  tibble::as_tibble()
+
+####subject and QC together
+temp_subject <- 
   subject_data2 %>% 
-  mutate(GA = sample_info$GA)
+  mutate(GA = sample_info$GA,
+         batch = sample_info$batch)
 
+temp_qc <- 
+  qc_data2 %>% 
+  mutate(GA = 0,
+         batch = "QC")
 
-##batch1 
-##PCA analysis
+rownames(temp_subject) <-
+  colnames(subject_data)
+
+rownames(temp_qc) <-
+  colnames(qc_data)
+
 temp_data <- 
-  subject_data2 %>% 
-  mutate(batch = sample_info$batch) %>% 
-  dplyr::filter(batch == 1) %>% 
-  dplyr::select(-c(batch, GA))
+  rbind(temp_subject, temp_qc)
 
 pca_object <- 
   prcomp(x = 
-           temp_data)
+           temp_data %>% select(-c(GA, batch)))
 
 library(ggfortify)
 
@@ -85,82 +105,43 @@ x <- pca_object$x
 x <- x[,1:2]
 
 x <- data.frame(x, 
-                GA = sample_info$GA[sample_info$batch == 1], 
+                batch = temp_data$batch,
                 stringsAsFactors = FALSE)
 
-ggplot(x[x$GA != 0,], aes(PC1, PC2, colour = GA)) +
+x <- 
+  x %>% 
+  rownames_to_column(var = "name")
+
+pca_data_quality_plot <- 
+ggplot(x, aes(PC1, PC2)) +
   geom_vline(xintercept = 0, linetype = 2) +
   geom_hline(yintercept = 0, linetype = 2) +
-  geom_point(size = 5) +
-  # scale_colour_gradient(low = alpha("#155F83FF", 0.1),
-  #                       high = alpha("#FFA319FF", 1)) +
-  guides(colour = guide_colourbar(title = "GA (week)")) +
-  scale_colour_gradientn(colours = c(
-    alpha("#155F83FF", 1),
-    alpha("#155F83FF", 0.4),
-    alpha("#FFA319FF", 0.4),
-    alpha("#FFA319FF", 1)
-  )) +
-  # scale_colour_brewer() +
+  geom_point(aes(colour = batch), size = 5) +
+  ggsci::scale_colour_futurama(alpha = 0.7) +
+  # guides(colour = guide_colourbar(title = "Class", title.position = "top")) +
   theme_bw() +
   theme(axis.title = element_text(size = 15),
         axis.text = element_text(size = 12), 
         legend.title = element_text(size = 15),
         legend.text = element_text(size = 12),
-        # legend.position = "top",
-        strip.background = element_rect(fill = "#0099B47F"),
-        strip.text = element_text(color = "white", size = 15)) 
-# annotate(geom = "point", x = x$PC1[x$GA==0], y = x$PC1[x$GA==0], colout = "black")
+        legend.position = c(1,1), legend.justification = c(1,1),
+        legend.background = element_blank()) +
+  labs(x = paste("PC1 (", round(summary(pca_object)$importance[1,1], 2), "%)", sep = ""),
+       y = paste("PC2 (", round(summary(pca_object)$importance[1,2], 2), "%)", sep = ""))
+  
+pca_data_quality_plot
+save(pca_data_quality_plot, file = "pca_data_quality_plot")
+ggsave(pca_data_quality_plot, filename = "pca_data_quality_plot.pdf", 
+       width = 7, height = 7)
 
 
 
-
-
-
-###tsne analysis
-# tsne_object <- Rtsne::Rtsne(
-#   X = as.matrix(temp_data),
-#   dims = 2,
-#   perplexity = 30,
-#   verbose = TRUE
-# )
-# 
-# Y <- tsne_object$Y
-# Y <-
-#   data.frame(Y, "GA" = sample_info$GA[sample_info$batch == 1],
-#              stringsAsFactors = FALSE)
-# 
-# (
-#   plot <- ggplot(Y, aes(X1, X2, colour = GA)) +
-#     geom_point(size = 3) +
-#     labs(x = "Dimension 1",
-#          y = "Dimension 2") +
-#     theme_bw() +
-#     scale_colour_gradient(low = alpha("#155F83FF", 0.1),
-#                           high = alpha("#FFA319FF", 1)) +
-#     guides(colour = guide_colourbar(title = "GA (week)")) +
-#     theme(
-#       axis.title = element_text(size = 15),
-#       axis.text = element_text(size = 12),
-#       legend.title = element_text(size = 15),
-#       legend.text = element_text(size = 12),
-#       strip.background = element_rect(fill = "#0099B47F"),
-#       strip.text = element_text(color = "white", size = 15)
-#     )
-# )
-
-
-##batch2
-##PCA analysis
+####PCA without PCA only for subjects
 temp_data <- 
-  subject_data2 %>% 
-  mutate(batch = sample_info$batch) %>% 
-  filter(batch == 2) %>% 
-  select(-c(batch, GA))
+  subject_data2
 
 pca_object <- 
-  prcomp(x = 
-           temp_data)
+  prcomp(x = temp_data)
 
 library(ggfortify)
 
@@ -169,15 +150,15 @@ x <- pca_object$x
 x <- x[,1:2]
 
 x <- data.frame(x, 
-                GA = sample_info$GA[sample_info$batch == 2], 
+                sample_info,
                 stringsAsFactors = FALSE)
 
+
+pca_pos_plot <- 
 ggplot(x[x$GA!=0,], aes(PC1, PC2, colour = GA)) +
   geom_vline(xintercept = 0, linetype = 2) +
   geom_hline(yintercept = 0, linetype = 2) +
   geom_point(size = 5) +
-  # scale_colour_gradient(low = alpha("#155F83FF", 0.7),
-  #                       high = alpha("#FFA319FF", 0.7)) +
   guides(colour = guide_colourbar(title = "GA (week)")) +
   scale_colour_gradientn(colours = c(
     alpha("#155F83FF", 1),
@@ -185,72 +166,31 @@ ggplot(x[x$GA!=0,], aes(PC1, PC2, colour = GA)) +
     alpha("#FFA319FF", 0.4),
     alpha("#FFA319FF", 1)
   )) +
-  # scale_colour_brewer() +
   theme_bw() +
   theme(axis.title = element_text(size = 15),
         axis.text = element_text(size = 12), 
         legend.title = element_text(size = 15),
         legend.text = element_text(size = 12),
-        # legend.position = "top",
-        strip.background = element_rect(fill = "#0099B47F"),
-        strip.text = element_text(color = "white", size = 15)) +
+        legend.position = c(1,1), legend.justification = c(1,1),
+        legend.background = element_blank()) +
   annotate(geom = "point", x = x$PC1[x$GA==0], y = x$PC2[x$GA == 0], 
-           colour = "#8A9045FF", size = 5)
+           colour = "#8A9045FF", size = 5) +
+  labs(x = paste("PC1 (", round(summary(pca_object)$importance[1,1], 2), "%)", sep = ""),
+       y = paste("PC2 (", round(summary(pca_object)$importance[1,2], 2), "%)", sep = ""))
 
 
+pca_pos_plot
 
-##batch1 and batch 2
-temp_data <- 
-  subject_data2 %>% 
-  mutate(batch = sample_info$batch) %>% 
-  select(-c(batch, GA))
-
-pca_object <- 
-  prcomp(x = 
-           temp_data)
-
-library(ggfortify)
-
-x <- pca_object$x
-
-x <- x[,1:2]
-
-x <- data.frame(x, 
-                GA = sample_info$GA, 
-                stringsAsFactors = FALSE)
-
-ggplot(x[x$GA !=0,], aes(PC1, PC2, colour = GA)) +
-  geom_vline(xintercept = 0, linetype = 2) +
-  geom_hline(yintercept = 0, linetype = 2) +
-  geom_point(size = 5) +
-  # scale_colour_gradient(low = alpha("#155F83FF", 0.7),
-  #                       high = alpha("#FFA319FF", 0.7)) +
-  guides(colour = guide_colourbar(title = "GA (week)")) +
-  scale_colour_gradientn(colours = c(
-    alpha("#155F83FF", 1),
-    alpha("#155F83FF", 0.4),
-    alpha("#FFA319FF", 0.4),
-    alpha("#FFA319FF", 1)
-  )) +
-  # scale_colour_brewer() +
-  theme_bw() +
-  theme(axis.title = element_text(size = 15),
-        axis.text = element_text(size = 12), 
-        legend.title = element_text(size = 15),
-        legend.text = element_text(size = 12),
-        # legend.position = "top",
-        strip.background = element_rect(fill = "#0099B47F"),
-        strip.text = element_text(color = "white", size = 15)) +
-  annotate(geom = "point", x = x$PC1[x$GA==0], y = x$PC2[x$GA == 0], 
-           colour = "#8A9045FF", size = 5)
+save(pca_pos_plot, file = "pca_pos_plot")
+ggsave(pca_pos_plot, filename = "pca_pos_plot.pdf", 
+       width = 7, height = 7)
 
 
 
 
-
-#####RPLC negative
-sxtTools::setwd_project()
-setwd("data_analysis20200108/data_overview/")
+#-------------------------------------------------------------------------------
+##RPLC pneg
+#-------------------------------------------------------------------------------
 load("../data_cleaning/RPLC/NEG/rplc_neg_6")
 library(metflow2)
 library(tidyverse)
@@ -263,6 +203,9 @@ subject_data <- metflow2::getData(object = rplc_neg_6,
 qc_data <- metflow2::getData(rplc_neg_6,
                              slot = "QC")
 
+# qc_data <- 
+#   qc_data %>% 
+#   select(-c(QC2.1, QC2.2, QC2.3, QC_0_25))
 
 ###remove peaks with large RSD
 qc_rsd <- apply(qc_data, 1, function(x){
@@ -274,11 +217,7 @@ remain_idx <-
 
 
 subject_data <- subject_data[remain_idx,]
-
-# sample_info <-
-#   sample_info %>%
-#   filter(GA != 0)
-
+qc_data <- qc_data[remain_idx,]
 
 sample_info <- 
   sample_info %>% 
@@ -288,43 +227,63 @@ subject_data <-
   subject_data %>% 
   dplyr::select(one_of(sample_info$sample.name))
 
-
 ###log
 subject_data <- 
   log(subject_data)
+
+qc_data <- 
+  log(qc_data)
 
 subject_data <- 
   t(
     apply(subject_data, 1, function(x){
       (x - mean(x))/sd(x)
     })
-  )
+  ) %>% 
+  tibble::as_tibble()
 
 
-subject_data <-
-  subject_data %>% 
-  as_tibble()
-
-subject_data2 <- t(subject_data)
-subject_data2 <- as_tibble(subject_data2)
-rownames(subject_data2)
+qc_data <- 
+  t(
+    apply(qc_data, 1, function(x){
+      (x - mean(x))/sd(x)
+    })
+  ) %>% 
+  tibble::as_tibble()
 
 subject_data2 <- 
+  t(subject_data) %>% 
+  tibble::as_tibble()
+
+rownames(subject_data2)
+
+qc_data2 <- 
+  t(qc_data) %>% 
+  tibble::as_tibble()
+
+####subject and QC together
+temp_subject <- 
   subject_data2 %>% 
-  mutate(GA = sample_info$GA)
+  mutate(GA = sample_info$GA,
+         batch = sample_info$batch)
 
+temp_qc <- 
+  qc_data2 %>% 
+  mutate(GA = 0,
+         batch = "QC")
 
-##batch1 
-##PCA analysis
+rownames(temp_subject) <-
+  colnames(subject_data)
+
+rownames(temp_qc) <-
+  colnames(qc_data)
+
 temp_data <- 
-  subject_data2 %>% 
-  mutate(batch = sample_info$batch) %>% 
-  filter(batch == 1) %>% 
-  select(-c(batch, GA))
+  rbind(temp_subject, temp_qc)
 
 pca_object <- 
   prcomp(x = 
-           temp_data)
+           temp_data %>% select(-c(GA, batch)))
 
 library(ggfortify)
 
@@ -333,82 +292,44 @@ x <- pca_object$x
 x <- x[,1:2]
 
 x <- data.frame(x, 
-                GA = sample_info$GA[sample_info$batch == 1], 
+                batch = temp_data$batch,
                 stringsAsFactors = FALSE)
 
-ggplot(x[x$GA != 0,], aes(PC1, PC2, colour = GA)) +
+x <- 
+  x %>% 
+  rownames_to_column(var = "name")
+
+pca_neg_data_quality_plot <- 
+  ggplot(x, aes(PC1, PC2)) +
   geom_vline(xintercept = 0, linetype = 2) +
   geom_hline(yintercept = 0, linetype = 2) +
-  geom_point(size = 5) +
-  # scale_colour_gradient(low = alpha("#155F83FF", 0.1),
-  #                       high = alpha("#FFA319FF", 1)) +
-  guides(colour = guide_colourbar(title = "GA (week)")) +
-  scale_colour_gradientn(colours = c(
-    alpha("#155F83FF", 1),
-    alpha("#155F83FF", 0.4),
-    alpha("#FFA319FF", 0.4),
-    alpha("#FFA319FF", 1)
-  )) +
-  # scale_colour_brewer() +
+  geom_point(aes(colour = batch), size = 5) +
+  ggsci::scale_colour_futurama(alpha = 0.7) +
+  # guides(colour = guide_colourbar(title = "Class", title.position = "top")) +
   theme_bw() +
   theme(axis.title = element_text(size = 15),
         axis.text = element_text(size = 12), 
         legend.title = element_text(size = 15),
         legend.text = element_text(size = 12),
-        # legend.negition = "top",
-        strip.background = element_rect(fill = "#0099B47F"),
-        strip.text = element_text(color = "white", size = 15)) 
-# annotate(geom = "point", x = x$PC1[x$GA==0], y = x$PC1[x$GA==0], colout = "black")
+        legend.position = c(1,1), legend.justification = c(1,1),
+        legend.background = element_blank()) +
+  labs(x = paste("PC1 (", round(summary(pca_object)$importance[1,1], 2), "%)", sep = ""),
+       y = paste("PC2 (", round(summary(pca_object)$importance[1,2], 2), "%)", sep = ""))
+
+pca_neg_data_quality_plot
+
+save(pca_neg_data_quality_plot, file = "pca_neg_data_quality_plot")
+ggsave(pca_neg_data_quality_plot, filename = "pca_neg_data_quality_plot.pdf", 
+       width = 7, height = 7)
 
 
 
-
-
-
-###tsne analysis
-# tsne_object <- Rtsne::Rtsne(
-#   X = as.matrix(temp_data),
-#   dims = 2,
-#   perplexity = 30,
-#   verbose = TRUE
-# )
-# 
-# Y <- tsne_object$Y
-# Y <-
-#   data.frame(Y, "GA" = sample_info$GA[sample_info$batch == 1],
-#              stringsAsFactors = FALSE)
-# 
-# (
-#   plot <- ggplot(Y, aes(X1, X2, colour = GA)) +
-#     geom_point(size = 3) +
-#     labs(x = "Dimension 1",
-#          y = "Dimension 2") +
-#     theme_bw() +
-#     scale_colour_gradient(low = alpha("#155F83FF", 0.1),
-#                           high = alpha("#FFA319FF", 1)) +
-#     guides(colour = guide_colourbar(title = "GA (week)")) +
-#     theme(
-#       axis.title = element_text(size = 15),
-#       axis.text = element_text(size = 12),
-#       legend.title = element_text(size = 15),
-#       legend.text = element_text(size = 12),
-#       strip.background = element_rect(fill = "#0099B47F"),
-#       strip.text = element_text(color = "white", size = 15)
-#     )
-# )
-
-
-##batch2
-##PCA analysis
+####PCA with out PCA only for subjects
 temp_data <- 
-  subject_data2 %>% 
-  mutate(batch = sample_info$batch) %>% 
-  filter(batch == 2) %>% 
-  select(-c(batch, GA))
+  subject_data2
 
 pca_object <- 
-  prcomp(x = 
-           temp_data)
+  prcomp(x = temp_data)
 
 library(ggfortify)
 
@@ -417,15 +338,15 @@ x <- pca_object$x
 x <- x[,1:2]
 
 x <- data.frame(x, 
-                GA = sample_info$GA[sample_info$batch == 2], 
+                sample_info,
                 stringsAsFactors = FALSE)
 
-ggplot(x[x$GA!=0,], aes(PC1, PC2, colour = GA)) +
+
+pca_neg_plot <- 
+  ggplot(x[x$GA!=0,], aes(PC1, PC2, colour = GA)) +
   geom_vline(xintercept = 0, linetype = 2) +
   geom_hline(yintercept = 0, linetype = 2) +
   geom_point(size = 5) +
-  # scale_colour_gradient(low = alpha("#155F83FF", 0.7),
-  #                       high = alpha("#FFA319FF", 0.7)) +
   guides(colour = guide_colourbar(title = "GA (week)")) +
   scale_colour_gradientn(colours = c(
     alpha("#155F83FF", 1),
@@ -433,64 +354,25 @@ ggplot(x[x$GA!=0,], aes(PC1, PC2, colour = GA)) +
     alpha("#FFA319FF", 0.4),
     alpha("#FFA319FF", 1)
   )) +
-  # scale_colour_brewer() +
   theme_bw() +
   theme(axis.title = element_text(size = 15),
         axis.text = element_text(size = 12), 
         legend.title = element_text(size = 15),
         legend.text = element_text(size = 12),
-        # legend.negition = "top",
-        strip.background = element_rect(fill = "#0099B47F"),
-        strip.text = element_text(color = "white", size = 15)) +
+        legend.position = c(1,1), legend.justification = c(1,1),
+        legend.background = element_blank()) +
   annotate(geom = "point", x = x$PC1[x$GA==0], y = x$PC2[x$GA == 0], 
-           colour = "#8A9045FF", size = 5)
+           colour = "#8A9045FF", size = 5) +
+  labs(x = paste("PC1 (", round(summary(pca_object)$importance[1,1], 2), "%)", sep = ""),
+       y = paste("PC2 (", round(summary(pca_object)$importance[1,2], 2), "%)", sep = ""))
 
 
+pca_neg_plot
 
-##batch1 and batch 2
-temp_data <- 
-  subject_data2 %>% 
-  mutate(batch = sample_info$batch) %>% 
-  select(-c(batch, GA))
+save(pca_neg_plot, file = "pca_neg_plot")
+ggsave(pca_neg_plot, filename = "pca_neg_plot.pdf", 
+       width = 7, height = 7)
 
-pca_object <- 
-  prcomp(x = 
-           temp_data)
-
-library(ggfortify)
-
-x <- pca_object$x
-
-x <- x[,1:2]
-
-x <- data.frame(x, 
-                GA = sample_info$GA, 
-                stringsAsFactors = FALSE)
-
-ggplot(x[x$GA !=0,], aes(PC1, PC2, colour = GA)) +
-  geom_vline(xintercept = 0, linetype = 2) +
-  geom_hline(yintercept = 0, linetype = 2) +
-  geom_point(size = 5) +
-  # scale_colour_gradient(low = alpha("#155F83FF", 0.7),
-  #                       high = alpha("#FFA319FF", 0.7)) +
-  guides(colour = guide_colourbar(title = "GA (week)")) +
-  scale_colour_gradientn(colours = c(
-    alpha("#155F83FF", 1),
-    alpha("#155F83FF", 0.4),
-    alpha("#FFA319FF", 0.4),
-    alpha("#FFA319FF", 1)
-  )) +
-  # scale_colour_brewer() +
-  theme_bw() +
-  theme(axis.title = element_text(size = 15),
-        axis.text = element_text(size = 12), 
-        legend.title = element_text(size = 15),
-        legend.text = element_text(size = 12),
-        # legend.negition = "top",
-        strip.background = element_rect(fill = "#0099B47F"),
-        strip.text = element_text(color = "white", size = 15)) +
-  annotate(geom = "point", x = x$PC1[x$GA==0], y = x$PC2[x$GA == 0], 
-           colour = "#8A9045FF", size = 5)
 
 
 
@@ -498,9 +380,9 @@ ggplot(x[x$GA !=0,], aes(PC1, PC2, colour = GA)) +
 
 ###RPLC POS and NEG
 sxtTools::setwd_project()
-setwd("data_analysis20200108/data_overview/")
-load("../data_cleaning/RPLC/POS/rplc_pos_6")
-load("../data_cleaning/RPLC/NEG/rplc_neg_6")
+setwd("data_analysis20200108/data_overview/features/")
+load("../../data_cleaning/RPLC/POS/rplc_pos_6")
+load("../../data_cleaning/RPLC/NEG/rplc_neg_6")
 
 library(metflow2)
 library(tidyverse)
@@ -512,8 +394,6 @@ subject_data_pos <- metflow2::getData(object = rplc_pos_6,
 
 qc_data_pos <- metflow2::getData(rplc_pos_6,
                                  slot = "QC")
-
-
 ###remove peaks with large RSD
 qc_rsd_pos <- apply(qc_data_pos, 1, function(x){
   sd(as.numeric(x))*100/mean(as.numeric(x))
@@ -524,6 +404,7 @@ remain_idx_pos <-
 
 
 subject_data_pos <- subject_data_pos[remain_idx_pos,]
+qc_data_pos <- qc_data_pos[remain_idx_pos,]
 
 
 sample_info_pos <- 
@@ -538,17 +419,8 @@ subject_data_pos <-
 subject_data_pos <- 
   log(subject_data_pos)
 
-# subject_data_pos <- 
-#   t(
-#     apply(subject_data_pos, 1, function(x){
-#       (x - mean(x))/sd(x)
-#     })
-#   )
-# 
-# subject_data_pos <-
-#   subject_data_pos %>% 
-#   as_tibble()
-
+qc_data_pos <- 
+  log(qc_data_pos)
 
 sample_info_neg <- rplc_neg_6@sample.info
 
@@ -569,6 +441,7 @@ remain_idx_neg <-
 
 
 subject_data_neg <- subject_data_neg[remain_idx_neg,]
+qc_data_neg <- qc_data_neg[remain_idx_neg,]
 
 
 sample_info_neg <- 
@@ -585,7 +458,6 @@ subject_data_neg <-
 
 
 ##combine pos and neg
-
 subject_data_pos <- 
   subject_data_pos %>% 
   select(one_of(intersect(colnames(subject_data_pos), colnames(subject_data_neg))))
@@ -593,13 +465,29 @@ subject_data_pos <-
 
 subject_data_neg <- 
   subject_data_neg %>% 
-  dplyr::select(one_of(intersect(colnames(subject_data_pos), colnames(subject_data_neg))))
+  select(one_of(intersect(colnames(subject_data_pos), colnames(subject_data_neg))))
 
 
 colnames(subject_data_pos) == colnames(subject_data_neg)
 
 subject_data <- 
   rbind(subject_data_pos, subject_data_neg)
+
+
+qc_data_pos <- 
+  qc_data_pos %>% 
+  select(one_of(intersect(colnames(qc_data_pos), colnames(qc_data_neg))))
+
+
+qc_data_neg <- 
+  qc_data_neg %>% 
+  select(one_of(intersect(colnames(qc_data_pos), colnames(qc_data_neg))))
+
+
+colnames(qc_data_pos) == colnames(qc_data_neg)
+
+qc_data <- 
+  rbind(qc_data_pos, qc_data_neg)
 
 sample_info <- 
   sample_info_pos %>% 
@@ -608,38 +496,110 @@ sample_info <-
 
 colnames(subject_data) == sample_info$sample.name
 
+
 subject_data <-
   t(
     apply(subject_data, 1, function(x){
       (x - mean(x))/sd(x)
     })
-  )
-
-subject_data <-
-  subject_data %>%
+  ) %>%
   as_tibble()
 
+
+qc_data <-
+  t(
+    apply(qc_data, 1, function(x){
+      (x - mean(x))/sd(x)
+    })
+  ) %>%
+  as_tibble()
+
+
+qc_data <- 
+  qc_data %>% 
+  select(-c(QC2.1,QC2.2, QC2.3))
 
 subject_data2 <- t(subject_data)
 subject_data2 <- as_tibble(subject_data2)
 rownames(subject_data2)
 
-subject_data2 <- 
+
+qc_data2 <- t(qc_data)
+qc_data2 <- as_tibble(qc_data2)
+rownames(qc_data2)
+
+
+####subject and QC together
+temp_subject <- 
   subject_data2 %>% 
-  dplyr::mutate(GA = sample_info$GA)
+  mutate(GA = sample_info$GA,
+         batch = sample_info$batch)
+
+temp_qc <- 
+  qc_data2 %>% 
+  mutate(GA = 0,
+         batch = "QC")
+
+rownames(temp_subject) <-
+  colnames(subject_data)
+
+rownames(temp_qc) <-
+  colnames(qc_data)
 
 
-##batch1 
-##PCA analysis
 temp_data <- 
-  subject_data2 %>% 
-  mutate(batch = sample_info$batch) %>% 
-  filter(batch == 1) %>% 
-  select(-c(batch, GA))
+  rbind(temp_subject, temp_qc)
 
 pca_object <- 
   prcomp(x = 
-           temp_data)
+           temp_data %>% select(-c(GA, batch)))
+
+library(ggfortify)
+
+x <- pca_object$x
+x <- x[,1:2]
+x <- data.frame(x, 
+                batch = temp_data$batch,
+                stringsAsFactors = FALSE)
+
+
+
+x <- 
+  x %>% 
+  rownames_to_column(var = "name")
+
+pca_pos_neg_data_quality_plot <- 
+  ggplot(x, aes(PC1, PC2)) +
+  geom_vline(xintercept = 0, linetype = 2) +
+  geom_hline(yintercept = 0, linetype = 2) +
+  geom_point(aes(colour = batch), size = 5) +
+  ggsci::scale_colour_futurama(alpha = 0.7) +
+  # guides(colour = guide_colourbar(title = "Class", title.position = "top")) +
+  theme_bw() +
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 12), 
+        legend.title = element_text(size = 15),
+        legend.text = element_text(size = 12),
+        legend.position = c(1,1), legend.justification = c(1,1),
+        legend.background = element_blank()) +
+  labs(x = paste("PC1 (", round(summary(pca_object)$importance[1,1], 2), "%)", sep = ""),
+       y = paste("PC2 (", round(summary(pca_object)$importance[1,2], 2), "%)", sep = "")) 
+  # ggrepel::geom_text_repel(aes(x = PC1, PC2, label = name))
+
+pca_pos_neg_data_quality_plot
+
+save(pca_pos_neg_data_quality_plot, file = "pca_pos_neg_data_quality_plot")
+ggsave(pca_pos_neg_data_quality_plot, filename = "pca_pos_neg_data_quality_plot.pdf", 
+       width = 7, height = 7)
+
+
+##PCA without QC
+####PCA with out PCA only for subjects
+temp_data <- 
+  subject_data2
+
+pca_object <- 
+  prcomp(x = temp_data)
 
 library(ggfortify)
 
@@ -648,15 +608,18 @@ x <- pca_object$x
 x <- x[,1:2]
 
 x <- data.frame(x, 
-                GA = sample_info$GA[sample_info$batch == 1], 
+                sample_info,
                 stringsAsFactors = FALSE)
 
-ggplot(x[x$GA != 0,], aes(PC1, PC2, colour = GA)) +
+
+
+
+
+pca_pos_neg_plot <- 
+  ggplot(x[x$GA!=0,], aes(PC1, PC2, colour = GA)) +
   geom_vline(xintercept = 0, linetype = 2) +
   geom_hline(yintercept = 0, linetype = 2) +
   geom_point(size = 5) +
-  # scale_colour_gradient(low = alpha("#155F83FF", 0.1),
-  #                       high = alpha("#FFA319FF", 1)) +
   guides(colour = guide_colourbar(title = "GA (week)")) +
   scale_colour_gradientn(colours = c(
     alpha("#155F83FF", 1),
@@ -664,162 +627,98 @@ ggplot(x[x$GA != 0,], aes(PC1, PC2, colour = GA)) +
     alpha("#FFA319FF", 0.4),
     alpha("#FFA319FF", 1)
   )) +
-  # scale_colour_brewer() +
   theme_bw() +
   theme(axis.title = element_text(size = 15),
         axis.text = element_text(size = 12), 
         legend.title = element_text(size = 15),
         legend.text = element_text(size = 12),
-        # legend.position = "top",
-        strip.background = element_rect(fill = "#0099B47F"),
-        strip.text = element_text(color = "white", size = 15)) 
-# annotate(geom = "point", x = x$PC1[x$GA==0], y = x$PC1[x$GA==0], colout = "black")
-
-
-
-
-
-
-###tsne analysis
-# tsne_object <- Rtsne::Rtsne(
-#   X = as.matrix(temp_data),
-#   dims = 2,
-#   perplexity = 30,
-#   verbose = TRUE
-# )
-# 
-# Y <- tsne_object$Y
-# Y <-
-#   data.frame(Y, "GA" = sample_info$GA[sample_info$batch == 1],
-#              stringsAsFactors = FALSE)
-# 
-# (
-#   plot <- ggplot(Y, aes(X1, X2, colour = GA)) +
-#     geom_point(size = 3) +
-#     labs(x = "Dimension 1",
-#          y = "Dimension 2") +
-#     theme_bw() +
-#     scale_colour_gradient(low = alpha("#155F83FF", 0.1),
-#                           high = alpha("#FFA319FF", 1)) +
-#     guides(colour = guide_colourbar(title = "GA (week)")) +
-#     theme(
-#       axis.title = element_text(size = 15),
-#       axis.text = element_text(size = 12),
-#       legend.title = element_text(size = 15),
-#       legend.text = element_text(size = 12),
-#       strip.background = element_rect(fill = "#0099B47F"),
-#       strip.text = element_text(color = "white", size = 15)
-#     )
-# )
-
-
-##batch2
-##PCA analysis
-temp_data <- 
-  subject_data2 %>% 
-  mutate(batch = sample_info$batch) %>% 
-  dplyr::filter(batch == 2) %>% 
-  dplyr::select(-c(batch, GA))
-
-pca_object <- 
-  prcomp(x = 
-           temp_data)
-
-library(ggfortify)
-
-x <- pca_object$x
-
-x <- x[,1:2]
-
-x <- data.frame(x, 
-                GA = sample_info$GA[sample_info$batch == 2], 
-                stringsAsFactors = FALSE)
-
-ggplot(x[x$GA!=0,], aes(PC1, PC2, colour = GA)) +
-  geom_vline(xintercept = 0, linetype = 2) +
-  geom_hline(yintercept = 0, linetype = 2) +
-  geom_point(size = 5) +
-  # scale_colour_gradient(low = alpha("#155F83FF", 0.7),
-  #                       high = alpha("#FFA319FF", 0.7)) +
-  guides(colour = guide_colourbar(title = "GA (week)")) +
-  scale_colour_gradientn(colours = c(
-    alpha("#155F83FF", 1),
-    alpha("#155F83FF", 0.4),
-    alpha("#FFA319FF", 0.4),
-    alpha("#FFA319FF", 1)
-  )) +
-  # scale_colour_brewer() +
-  theme_bw() +
-  theme(axis.title = element_text(size = 15),
-        axis.text = element_text(size = 12), 
-        legend.title = element_text(size = 15),
-        legend.text = element_text(size = 12),
-        # legend.position = "top",
-        strip.background = element_rect(fill = "#0099B47F"),
-        strip.text = element_text(color = "white", size = 15)) +
+        legend.position = c(1,1), legend.justification = c(1,1),
+        legend.background = element_blank()) +
   annotate(geom = "point", x = x$PC1[x$GA==0], y = x$PC2[x$GA == 0], 
-           colour = "#8A9045FF", size = 5)
+           colour = "#C71000FF", size = 5) +
+  labs(x = paste("PC1 (", round(summary(pca_object)$importance[1,1], 2), "%)", sep = ""),
+       y = paste("PC2 (", round(summary(pca_object)$importance[1,2], 2), "%)", sep = ""))
+
+
+pca_pos_neg_plot
+
+save(pca_pos_neg_plot, file = "pca_pos_neg_plot")
+ggsave(pca_pos_neg_plot, filename = "pca_pos_neg_plot.pdf", 
+       width = 7, height = 7)
 
 
 
-##batch1 and batch 2
-temp_data <- 
-  subject_data2 %>% 
-  mutate(batch = sample_info$batch) %>% 
-  select(-c(batch, GA))
+####for each participant
+sample_info2 <- readr::read_csv("../../../patient information/sample_info_191021.csv")
+dim(x)
 
-pca_object <- 
-  prcomp(x = 
-           temp_data)
 
-library(ggfortify)
+##X178 is P1, X179 is P2, and X180 is P3. X198 is P21. and so on
+temp_idx <- match(paste("X", 178:198, sep = ""), sample_info2$Sample_ID)
+sample_info2$Sample_ID[temp_idx] <-
+  sample_info2$Sample_ID[temp_idx] %>% 
+  stringr:::str_replace("X", "") %>% 
+  as.numeric() %>% 
+  `-`(177) %>% 
+  paste("P", ., sep = "")
 
-x <- pca_object$x
+x <- 
+  x %>% 
+  left_join(sample_info2[,c("Sample_ID", "Patient_ID")],
+            by = c("sample.name" = "Sample_ID"))
 
-x <- x[,1:2]
+x2 <-
+  x %>% 
+  mutate(y = 0) %>% 
+  dplyr::filter( GA == 0)
 
-x <- data.frame(x, 
-                GA = sample_info$GA, 
-                stringsAsFactors = FALSE)
-
-ggplot(x[x$GA !=0,], aes(PC1, PC2, colour = GA)) +
-  geom_vline(xintercept = 0, linetype = 2) +
-  geom_hline(yintercept = 0, linetype = 2) +
-  geom_point(size = 5) +
-  # scale_colour_gradient(low = alpha("#155F83FF", 0.7),
-  #                       high = alpha("#FFA319FF", 0.7)) +
-  guides(colour = guide_colourbar(title = "GA (week)")) +
+x %>% 
+  dplyr::filter(GA != 0) %>% 
+  mutate(y = 0) %>% 
+  ggplot(aes(x = PC2, y = y, colour = GA)) +
+  geom_point(shape = 20) +
+  geom_point(mapping = aes(x = PC2, y = y),
+             data = x2, color = "#C71000FF", shape = 20) +
+  # annotate(geom = "point", x = x$PC1[x$GA==0], y = 0, 
+  #          colour = "#C71000FF") +
+  ggrepel::geom_text_repel(aes(PC2, y = y, label = round(GA, 2)), 
+                           size = 2.5) +
   scale_colour_gradientn(colours = c(
     alpha("#155F83FF", 1),
     alpha("#155F83FF", 0.4),
     alpha("#FFA319FF", 0.4),
     alpha("#FFA319FF", 1)
   )) +
-  # scale_colour_brewer() +
+  labs(y = "") +
+  facet_wrap(~Patient_ID, ncol = 6) +
   theme_bw() +
-  theme(axis.title = element_text(size = 15),
-        axis.text = element_text(size = 12), 
-        legend.title = element_text(size = 15),
-        legend.text = element_text(size = 12),
-        # legend.position = "top",
-        strip.background = element_rect(fill = "#0099B47F"),
-        strip.text = element_text(color = "white", size = 15)) +
-  annotate(geom = "point", x = x$PC1[x$GA == 0], y = x$PC2[x$GA == 0], 
-           colour = "#8A9045FF", size = 5)
+  theme(axis.title = element_text(size = 8),
+        axis.text = element_text(size = 8), 
+        legend.title = element_text(size = 8),
+        legend.text = element_text(size = 8),
+        legend.position = "top",
+        legend.background = element_blank(),
+        strip.background = element_rect(fill = "grey"), 
+        strip.text = element_text(color = "white"),
+        axis.text.y = element_blank(),
+        panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        axis.ticks.y = element_blank()
+        )
 
 
-
-
-
-
-
-
-
-
-
-
-
-
+##legend
+x %>% 
+  arrange(GA) %>% 
+  mutate(x = 1:nrow(x)) %>% 
+  mutate(y = 0) %>% 
+ggplot(aes(x = GA ,y= y, colour=GA)) + 
+  geom_line(size = 1.2) +
+  scale_colour_gradientn(colours = c(
+    alpha("#155F83FF", 1),
+    alpha("#155F83FF", 0.4),
+    alpha("#FFA319FF", 0.4),
+    alpha("#FFA319FF", 1)))
 
 
 

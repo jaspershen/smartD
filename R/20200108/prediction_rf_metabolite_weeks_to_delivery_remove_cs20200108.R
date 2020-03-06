@@ -11,7 +11,6 @@ load("sample_data_dis_x")
 load("sample_data_val_x")
 load("metabolite_tags")
 
-
 setwd("RF/time_to_due_prediction/remove_cs")
 info <-
   readxl::read_xlsx("E:/project/smartD/patient information/SmartD_ClinicalVariables_PartiallySummarized.xlsx")
@@ -22,17 +21,17 @@ info <-
 
 info <- 
   info %>% 
-  filter(!is.na(`C/S`))
+  dplyr::filter(!is.na(`C/S`))
 
 info <-
   info %>% 
-  filter(`C/S` == "N")
+  dplyr::filter(`C/S` == "N")
 
 
 ##remove induction
-info <- 
-  info %>% 
-  filter(Induction == "N")
+# info <- 
+#   info %>% 
+#   dplyr::filter(Induction == "N")
 
 
 idx_dis <- 
@@ -363,6 +362,68 @@ marker_rf <-
 
 rm(boruta_test)
 
+
+
+# marker_rf <- readr::read_csv("marker_rf_final.csv")
+
+
+temp_data <- marker_rf
+# colnames(temp_data) <-
+#   stringr::str_replace(colnames(temp_data), "_importance", "")
+
+temp_data <-
+  temp_data %>%
+  arrange(mean)
+
+
+text_colour <- temp_data$super_class
+text_colour[is.na(text_colour)] <- "Unknown"
+
+text_colour
+
+colour <<- 
+  c(
+    # "Clinical information" = "#FF6F00FF",
+    # "Alkaloids and derivatives" = "#ADE2D0FF",
+    # "Benzenoids" = "#C71000FF",
+    "Lipids and lipid-like molecules" = "#FF6F00B2",
+    "Nucleosides, nucleotides, and analogues" = "#C71000B2",
+    # "Organic acids and derivatives" = "#8A4198FF",
+    # "Organic nitrogen compounds" = "#5A9599FF",
+    "Organic oxygen compounds" = "#008EA0B2",
+    "Organoheterocyclic compounds" = "#8A4198B2",
+    # "Organosulfur compounds" = "#3F4041FF",
+    "Phenylpropanoids and polyketides" = "#5A9599B2",
+    "Unknown" = "#3F4041B2"
+  )
+
+text_colour <- 
+  colour[match(text_colour, names(colour))] %>% 
+  unname()
+marker_rf_plot <- 
+ggplot(temp_data,aes(x = factor(Compound.name, Compound.name), y = mean)) +
+  labs(x = "", y = "Importance") +
+  geom_errorbar(aes(ymin = ymin, ymax = ymax), colour = "#155F83FF", width = 0) +
+  geom_point(size = 2, colour = "#FFA319FF") +
+  theme_bw() +
+  coord_flip() +
+  theme(axis.title = element_text(size = 15),
+        axis.text.x = element_text(size = 13),
+        # panel.grid.major.y = element_line(colour = text_colour),
+        axis.text.y = element_text(size = 10, colour = text_colour))
+
+
+marker_rf_plot
+save(marker_rf_plot, file = "marker_rf_plot")
+
+ggsave(filename = "marker_rf.pdf", width = 7, height = 7)
+
+
+
+
+
+
+
 ggplot(temp_data,aes(x = factor(Compound.name, Compound.name), y = mean)) +
   labs(x = "", y = "Importance") +
   geom_errorbar(aes(ymin = ymin, ymax = ymax), colour = "#155F83FF", width = 0) +
@@ -513,6 +574,38 @@ temp_data <-
 
 predicted_result <- temp_data
 save(predicted_result, file = "predicted_result")
+
+
+
+## T1 0-13, T2 14 -26, T3 27-40
+predicted_result %>% 
+  dplyr::filter(measured >= 0 & measured < 14) %>% 
+  mutate(x = measured - predicted) %>% 
+  pull(x) %>% 
+  abs() %>% 
+  mean()
+
+predicted_result %>% 
+  dplyr::filter(measured >= 14 & measured < 26) %>% 
+  mutate(x = measured - predicted) %>% 
+  pull(x) %>% 
+  abs() %>% 
+  mean()
+
+predicted_result %>% 
+  dplyr::filter(measured >= 23 & measured < 40) %>% 
+  mutate(x = measured - predicted) %>% 
+  pull(x) %>% 
+  abs() %>% 
+  mean()
+
+abs(predicted_result$measured - predicted_result$predicted) %>%
+  mean()
+
+cor.test(predicted_result$measured, predicted_result$predicted)
+
+
+
 
 rmse_r2 <- 
   temp_data %>% 
@@ -690,6 +783,39 @@ temp <-
   dplyr::summarise(mean = mean(predict), sd = sd(predict))
 
 plot(temp$y, temp$mean)
+
+
+abs(temp$y - temp$mean) %>% 
+  mean()
+
+summary(lm(formula = temp$y~temp$mean))
+
+cor.test(temp$y, temp$mean)
+
+
+
+temp %>% 
+  dplyr::filter(y >= 0 & y < 14) %>% 
+  mutate(x = y - mean) %>% 
+  pull(x) %>% 
+  abs() %>% 
+  mean()
+
+temp %>% 
+  dplyr::filter(y >= 14 & y < 26) %>% 
+  mutate(x = y - mean) %>% 
+  pull(x) %>% 
+  abs() %>% 
+  mean()
+
+
+temp %>% 
+  dplyr::filter(y >= 26 & y < 40) %>% 
+  mutate(x = y - mean) %>% 
+  pull(x) %>% 
+  abs() %>% 
+  mean()
+
 
 
 abline(0,1)

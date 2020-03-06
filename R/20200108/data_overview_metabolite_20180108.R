@@ -34,7 +34,7 @@ qc_data <- qc_data[remain_idx,]
 
 sample_info <- 
   sample_info %>% 
-  filter(class == "Subject")
+  dplyr::filter(class == "Subject")
 
 subject_data <- 
   subject_data %>% 
@@ -129,13 +129,14 @@ ggplot(x, aes(PC1, PC2)) +
   labs(x = paste("PC1 (", round(summary(pca_object)$importance[1,1], 2), "%)", sep = ""),
        y = paste("PC2 (", round(summary(pca_object)$importance[1,2], 2), "%)", sep = ""))
   
+pca_data_quality_plot
 save(pca_data_quality_plot, file = "pca_data_quality_plot")
 ggsave(pca_data_quality_plot, filename = "pca_data_quality_plot.pdf", 
        width = 7, height = 7)
 
 
 
-####PCA with out PCA only for subjects
+####PCA without PCA only for subjects
 temp_data <- 
   subject_data2
 
@@ -373,6 +374,10 @@ ggsave(pca_neg_plot, filename = "pca_neg_plot.pdf",
        width = 7, height = 7)
 
 
+
+
+
+
 ###RPLC POS and NEG
 sxtTools::setwd_project()
 setwd("data_analysis20200108/data_overview/features/")
@@ -404,7 +409,7 @@ qc_data_pos <- qc_data_pos[remain_idx_pos,]
 
 sample_info_pos <- 
   sample_info_pos %>% 
-  filter(class == "Subject")
+  dplyr::filter(class == "Subject")
 
 subject_data_pos <- 
   subject_data_pos %>% 
@@ -441,7 +446,7 @@ qc_data_neg <- qc_data_neg[remain_idx_neg,]
 
 sample_info_neg <- 
   sample_info_neg %>% 
-  filter(class == "Subject")
+  dplyr::filter(class == "Subject")
 
 subject_data_neg <- 
   subject_data_neg %>% 
@@ -486,7 +491,7 @@ qc_data <-
 
 sample_info <- 
   sample_info_pos %>% 
-  filter(sample.name %in% colnames(subject_data))
+  dplyr::filter(sample.name %in% colnames(subject_data))
 
 
 colnames(subject_data) == sample_info$sample.name

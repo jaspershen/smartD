@@ -10,7 +10,12 @@ load("sample_data_dis_x")
 load("sample_data_val_x")
 load("metabolite_tags")
 
+
 setwd("RF/GA_prediction/")
+
+
+
+
 library(randomForest)
 
 library(Boruta)
@@ -282,6 +287,43 @@ marker_rf <-
   dplyr::select(name, everything())
 
 
+# marker_rf <- readr::read_csv("marker_rf_final.csv")
+# 
+# 
+# temp_data <- marker_rf
+# colnames(temp_data) <-
+#   stringr::str_replace(colnames(temp_data), "_importance", "")
+# 
+# temp_data <- 
+#   temp_data %>% 
+#   arrange(mean)
+
+
+text_colour <- temp_data$super_class
+text_colour[is.na(text_colour)] <- "Unknown"
+
+text_colour
+
+colour <<- 
+c(
+  # "Clinical information" = "#FF6F00FF",
+  # "Alkaloids and derivatives" = "#ADE2D0FF",
+  # "Benzenoids" = "#C71000FF",
+  "Lipids and lipid-like molecules" = "#FF6F00B2",
+  "Nucleosides, nucleotides, and analogues" = "#C71000B2",
+  # "Organic acids and derivatives" = "#8A4198FF",
+  # "Organic nitrogen compounds" = "#5A9599FF",
+  "Organic oxygen compounds" = "#008EA0B2",
+  "Organoheterocyclic compounds" = "#8A4198B2",
+  # "Organosulfur compounds" = "#3F4041FF",
+  "Phenylpropanoids and polyketides" = "#5A9599B2",
+  "Unknown" = "#3F4041B2"
+)
+
+text_colour <- 
+  colour[match(text_colour, names(colour))] %>% 
+  unname()
+
 ggplot(temp_data,aes(x = factor(Compound.name, Compound.name), y = mean)) +
   labs(x = "", y = "Importance") +
   geom_errorbar(aes(ymin = ymin, ymax = ymax), colour = "#155F83FF", width = 0) +
@@ -290,7 +332,8 @@ ggplot(temp_data,aes(x = factor(Compound.name, Compound.name), y = mean)) +
   coord_flip() +
   theme(axis.title = element_text(size = 15),
         axis.text.x = element_text(size = 13),
-        axis.text.y = element_text(size = 10))
+        # panel.grid.major.y = element_line(colour = text_colour),
+        axis.text.y = element_text(size = 10, colour = text_colour))
 
 ggsave(filename = "marker_rf.pdf", width = 7, height = 7)
 
@@ -607,6 +650,39 @@ waffle(sort(test)*3, colors = ggsci::pal_futurama()(12), rows = 8)
 abs(sample_data_val_y[,1] - predicted_y2) %>% 
   mean()
 
+# abs(predicted_result$measured - predicted_result$predicted) %>% 
+#   mean()
+# 
+# summary(lm(formula = predicted_result$predicted~predicted_result$measured))
+
+# cor.test(predicted_result$measured, predicted_result$predicted)
+
+## T1 0-13, T2 14 -26, T3 27-40
+predicted_result %>% 
+  dplyr::filter(measured >= 0 & measured < 14) %>% 
+  mutate(x = measured - predicted) %>% 
+  pull(x) %>% 
+  abs() %>% 
+  mean()
+
+predicted_result %>% 
+  dplyr::filter(measured >= 14 & measured < 26) %>% 
+  mutate(x = measured - predicted) %>% 
+  pull(x) %>% 
+  abs() %>% 
+  mean()
+
+predicted_result %>% 
+  dplyr::filter(measured >= 26 & measured < 40) %>% 
+  mutate(x = measured - predicted) %>% 
+  pull(x) %>% 
+  abs() %>% 
+  mean()
+
+abs(predicted_result$measured - predicted_result$predicted) %>%
+  mean()
+
+
 summary(lm(formula = predicted_y2~sample_data_val_y[,1]))
 
 write.table("Information", "information.txt")
@@ -681,11 +757,74 @@ for(i in 1:1000){
   
   y[[i]] <- 
     sample_data_dis_y[val_index,1]
+  names(predict_y[[i]]) <- 
+    names(y[[i]]) <- 
+    sample_data_dis$Sample_ID[val_index]
   
 }
 
 save(predict_y, file = "predict_y")
 save(y, file = "y")
+
+
+temp_sample_id <- 
+sample_data_dis %>% 
+  dplyr::filter(Patient_ID == "SF1562") %>% 
+  pull(Sample_ID)
+
+
+
+temp_y1 <- data.frame(sample_id = names(unlist(y)[names(unlist(y)) %in% temp_sample_id]), 
+                      y1 = unlist(y)[names(unlist(y)) %in% temp_sample_id],
+                     stringsAsFactors = FALSE) 
+  
+
+temp_y2 <- data.frame(sample_id = names(unlist(predict_y)[names(unlist(y)) %in% temp_sample_id]), 
+                      y2 = unlist(predict_y)[names(unlist(predict_y)) %in% temp_sample_id],
+                      stringsAsFactors = FALSE) 
+
+temp_y <- 
+  temp_y1 %>% 
+  left_join(temp_y2, by = "sample_id")
+
+
+temp_y <- 
+temp_y %>% 
+  dplyr::group_by(sample_id) %>% 
+  dplyr::summarise(y1_mean = mean(y1),
+            y2_mean = mean(y2),
+            y2_sd = sd(y2),
+            n = dplyr::n()) 
+ 
+
+temp_y %>% 
+  arrange(y1_mean) %>% 
+  ggplot(aes(x = y1_mean, y = y2_mean)) +
+  geom_abline(intercept = 0, slope = 1, linetype = 2) +
+  labs(x = "Gestational Age (week, Actual)", y = "Gestational Age (week, Predicted)") +
+  geom_point(size = 2, colour = "#FFA319FF") +
+    geom_errorbar(aes(ymin = y2_mean - y2_sd, 
+                      ymax = y2_mean + y2_sd),
+                  data = temp_y,
+                  colour = "#155F83FF") +
+  geom_smooth(colour = "#8A9045FF", , fill = "grey") +
+  scale_x_continuous(limits = c(17.5, 39)) +
+  scale_y_continuous(limits = c(17.5, 39)) +
+  theme(axis.title = element_text(size = 15),
+        axis.text = element_text(size = 13)) +
+  theme_bw()
+
+
+abs(temp_y$y1_mean - temp_y$y2_mean) %>% 
+  mean()
+
+summary(lm(formula = temp_y$y1_mean ~ temp_y$y2_mean))
+
+
+
+  
+
+
 
 prediction <-
   data.frame(y = unlist(y),
@@ -703,6 +842,34 @@ abs(temp$y - temp$mean) %>%
   mean()
 
 summary(lm(formula = temp$y~temp$mean))
+
+cor.test(temp$y, temp$mean)
+
+
+
+temp %>% 
+  dplyr::filter(y >= 0 & y < 14) %>% 
+  mutate(x = y - mean) %>% 
+  pull(x) %>% 
+  abs() %>% 
+  mean()
+
+temp %>% 
+  dplyr::filter(y >= 14 & y < 26) %>% 
+  mutate(x = y - mean) %>% 
+  pull(x) %>% 
+  abs() %>% 
+  mean()
+
+
+temp %>% 
+  dplyr::filter(y >= 26 & y < 40) %>% 
+  mutate(x = y - mean) %>% 
+  pull(x) %>% 
+  abs() %>% 
+  mean()
+
+
 
 
 cat("RMSE for internal validation dataset:\n", file = "information.txt", append = TRUE)
@@ -753,7 +920,7 @@ info <-
 
 info <-
   info %>%
-  filter(ID %in% sample_info$Patient_ID)
+  dplyr::filter(ID %in% sample_info$Patient_ID)
 
 info$ID == unique(sample_info$Patient_ID)
 
@@ -859,6 +1026,10 @@ clinical_data <- rbind(
 colnames(clinical_data) <-
   info$ID
 
+
+
+
+
 # ##due_date, age, bmi, birth_wt
 # clinical_data <-
 #   clinical_data %>%   
@@ -888,6 +1059,93 @@ rownames(clinical_data) <-
 clinical_data <-
   clinical_data %>% 
   rownames_to_column(var = "Patient_ID")
+
+clinical_data <- 
+clinical_data %>% 
+  mutate(class = case_when(
+    Patient_ID %in% sample_data_dis$Patient_ID ~ "dis",
+    Patient_ID %in% sample_data_val$Patient_ID ~ "val"
+  ))
+
+
+
+clinical_data %>% 
+  group_by(class, induction) %>% 
+  dplyr::summarise(n = n())
+
+
+clinical_data %>% 
+  group_by(class) %>% 
+  dplyr::summarise(mean = mean(as.numeric(birth_wt), na.rm = TRUE),
+                   sd = sd(as.numeric(birth_wt), na.rm = TRUE)) %>% 
+  view()
+
+
+clinical_data %>% 
+  group_by(class) %>% 
+  dplyr::summarise(mean = mean(as.numeric(due_date)*7),
+                   sd = sd(as.numeric(due_date)*7)) %>% 
+  view()
+
+
+wilcox.test(as.numeric(clinical_data$age[clinical_data$class == "dis"]),
+            as.numeric(clinical_data$age[clinical_data$class == "val"]))
+
+
+wilcox.test(as.numeric(clinical_data$bmi[clinical_data$class == "dis"]),
+            as.numeric(clinical_data$bmi[clinical_data$class == "val"]))
+
+wilcox.test(as.numeric(clinical_data$due_date[clinical_data$class == "dis"]),
+            as.numeric(clinical_data$due_date[clinical_data$class == "val"]))
+
+wilcox.test(as.numeric(clinical_data$birth_wt[clinical_data$class == "dis"]),
+            as.numeric(clinical_data$birth_wt[clinical_data$class == "val"]))
+
+
+chisq.test(x = c(4,12), y = c(3,17), correct = TRUE, simulate.p.value = TRUE)
+
+chisq.test(x = c(5,8), y = c(5,5), correct = TRUE, simulate.p.value = TRUE)
+
+chisq.test(rbind(c(5,8), c(5,5)))
+
+chisq.test(rbind(c(6,10), c(5,5)))
+
+chisq.test(rbind(c(4,12), c(3,17)))
+
+chisq.test(rbind(c(2,6,2,0,6,0),
+           c(4,3,7,2,3,1)),
+           correct = TRUE, simulate.p.value = TRUE)
+
+
+
+
+
+sample_data_dis %>% 
+  select(Patient_ID, Sex) %>% 
+  distinct() %>% 
+  pull(Sex) %>% 
+  table()
+
+sample_data_val %>% 
+  select(Patient_ID, Sex) %>% 
+  distinct() %>% 
+  pull(Sex) %>% 
+  table()
+
+
+
+
+
+
+clinical_data %>% 
+  group_by(class) %>% 
+  dplyr::summarise(n1 = sum(parity == 0),
+n2 = sum(parity == 1),
+n3 = sum(parity >= 2))
+
+
+
+
 
 save(clinical_data, file = "clinical_data")
 
@@ -947,5 +1205,135 @@ cor.test(clinical_data$r2,
 
 
 
+clinical_data$rmse
 
+clinical_data$r2
+
+
+
+colnames(clinical_data)
+
+
+
+clinical_data %>% 
+  ggplot(aes(x = ethinic, y = rmse)) +
+  geom_boxplot() +
+  geom_jitter() +
+  theme_bw() +
+  labs(x = "Ethinicity", ylab = "RMSE") +
+  theme(axis.title = element_text(size = 15),
+        axis.text.x = element_text(size = 13),
+        axis.text.y = element_text(size = 13))
+
+
+clinical_data %>% 
+  ggplot(aes(x = ethinic, y = r2)) +
+  geom_boxplot() +
+  geom_jitter() +
+  theme_bw() +
+  labs(x = "Ethinicity", ylab = "R2") +
+  theme(axis.title = element_text(size = 15),
+        axis.text.x = element_text(size = 13),
+        axis.text.y = element_text(size = 13))
+
+
+
+
+plot(clinical_data$age)
+
+plot(clinical_data$bmi)
+
+plot(clinical_data$parity)
+
+plot(clinical_data$birth_wt)
+
+
+colnames(clinical_data)
+
+temp_data <- 
+clinical_data %>% 
+  dplyr::select(rmse, r2, age, bmi, parity, birth_wt) %>%
+  apply(2, as.numeric) %>% 
+  Hmisc::rcorr(type = "spearman")
+
+temp_cor <- temp_data$r
+temp_p <- temp_data$P
+
+
+temp_cor <- 
+temp_cor[-c(1,2),-c(3,4,5,6)] %>% 
+  as.data.frame() %>% 
+  rownames_to_column("clinical") %>% 
+  tidyr::pivot_longer(cols = -clinical, names_to = "class", values_to = "cor")
+
+temp_p <- 
+temp_p[-c(1,2),-c(3,4,5,6)] %>% 
+  as.data.frame() %>% 
+  rownames_to_column("clinical") %>% 
+  tidyr::pivot_longer(cols = -clinical, names_to = "class", values_to = "p")
+
+
+temp_data <- 
+  temp_cor %>% 
+  left_join(temp_p, by = c("clinical", "class"))
+
+
+
+
+
+temp_data %>% 
+  ggplot(aes(x=clinical, y = class, colour = cor, size = -log(p, 10))) +
+  geom_point() +
+  # geom_text(aes(text = ))
+  labs(x = "", y = "") +
+  scale_colour_gradientn(colours = c(
+    alpha("#84D7E1FF", 1),
+    alpha("#84D7E1FF", 0.4),
+    alpha("#C71000FF", 0.4),
+    alpha("#C71000FF", 1)
+  )) +
+  scale_size_continuous(range = c(5,20)) +
+  theme_bw() +
+  theme(axis.title = element_text(size = 15),
+        axis.text.x = element_text(size = 13),
+        axis.text.y = element_text(size = 13), legend.position = "top")
+
+temp_data[-c(1,2),-c(3,4,5)] %>% 
+  pheatmap::pheatmap(color = colorRampPalette(c("#84D7E1FF", "white", "#C71000FF"))(100),
+                     cluster_cols = FALSE, 
+                     cluster_rows = FALSE, 
+                     display_numbers = TRUE)
+
+
+
+
+clinical_data %>% 
+  ggplot(aes(x = rmse, y = r2)) +
+  geom_point()
+
+
+
+
+
+sxtTools::setwd_project()
+setwd("data_analysis20200108/prediction/metabolites/RF/GA_prediction/") 
+marker_rf <- readr::read_csv("marker_rf_final.csv")
+test <- 
+  marker_rf %>% 
+  dplyr::mutate(super_class = case_when(
+    is.na(super_class) ~ "Unknown",
+    TRUE ~ super_class
+  )) %>% 
+  dplyr::group_by(super_class) %>% 
+  dplyr::summarise(important_ratio = sum(mean_importance), n = n()) %>% 
+  mutate(x = important_ratio/sum(important_ratio))
+
+df2 <- 
+test %>% 
+  dplyr::select(super_class, x) %>% 
+  mutate(browser = super_class, share = x*100) %>% 
+  select(browser, share) %>% 
+  as.data.frame()
+PieDonut(df2, mapping = aes(browser, share), 
+         r0 = 0.4, start=3*pi/2,labelpositionThreshold=0.1)
 

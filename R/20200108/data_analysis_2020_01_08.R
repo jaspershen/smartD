@@ -33,7 +33,7 @@ subject_data <- subject_data[remain_idx,]
 
 sample_info <- 
   sample_info %>% 
-  filter(class == "Subject")
+  dplyr::filter(class == "Subject")
 
 subject_data <- 
   subject_data %>% 
@@ -70,8 +70,8 @@ subject_data2 <-
 temp_data <- 
   subject_data2 %>% 
   mutate(batch = sample_info$batch) %>% 
-  filter(batch == 1) %>% 
-  select(-c(batch, GA))
+  dplyr::filter(batch == 1) %>% 
+  dplyr::select(-c(batch, GA))
 
 pca_object <- 
   prcomp(x = 
@@ -154,8 +154,8 @@ ggplot(x[x$GA != 0,], aes(PC1, PC2, colour = GA)) +
 temp_data <- 
   subject_data2 %>% 
   mutate(batch = sample_info$batch) %>% 
-  filter(batch == 2) %>% 
-  select(-c(batch, GA))
+  dplyr::filter(batch == 2) %>% 
+  dplyr::select(-c(batch, GA))
 
 pca_object <- 
   prcomp(x = 

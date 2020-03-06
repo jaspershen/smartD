@@ -1,7 +1,7 @@
 library(ggsci)
 library(scales)
 
-test_colour1 <- ggsci::pal_uchicago(alpha = 0.7)(9)
+test_colour1 <- ggsci::pal_uchicago(alpha = 0.3)(9)
 test_colour2 <- ggsci::pal_uchicago(alpha = 1)(9)
 library(scales)
 
